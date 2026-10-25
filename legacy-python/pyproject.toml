@@ -1,0 +1,129 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gameloop-tuner"
+version = "2.1.0"
+description = "GameLoop Tuner — Diagnose, tune, and fix GameLoop/CODM configuration on Windows"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Codmsurge", email = "codmsurge@example.com"}
+]
+maintainers = [
+    {name = "Codmsurge"}
+]
+keywords = [
+    "gameloop",
+    "tencent",
+    "android-emulator",
+    "call-of-duty-mobile",
+    "codm",
+    "keymap",
+    "optimizer",
+    "windows"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Hardware :: Hardware Drivers",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "customtkinter>=6.0.0",
+    "psutil>=5.9.0",
+    "pywin32>=306",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+    "pyinstaller>=6.0.0",
+]
+build = [
+    "pyinstaller>=6.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/codmsurge/gameloop-tuner"
+Repository = "https://github.com/codmsurge/gameloop-tuner"
+Issues = "https://github.com/codmsurge/gameloop-tuner/issues"
+Documentation = "https://github.com/codmsurge/gameloop-tuner/wiki"
+
+[project.scripts]
+gameloop-tuner = "src.main:main"
+gl-tuner = "src.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.setuptools.package-data]
+"src.ui" = ["*.png", "*.ico"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "PT", "SIM", "TCH", "TID"]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "TCH001",  # type comment syntax
+    "TCH002",  # type comment syntax
+    "UP031",  # percent format (legacy codebase)
+    "C408",   # dict() calls (legacy codebase)
+    "B007",   # unused loop vars (legacy codebase)
+    "F841",   # unused exception var (legacy codebase)
+    "F821",   # undefined name (legacy codebase)
+    "W291",   # trailing whitespace (legacy codebase)
+    "W293",   # blank line whitespace (legacy codebase)
+    "I001",   # import sorting (legacy codebase)
+    "N812",   # theme as T (legacy codebase)
+    "F401",   # unused import (legacy codebase)
+    "E731",   # lambda assignment (legacy codebase)
+    "SIM105", # contextlib.suppress (legacy codebase)
+    "B904",   # raise from (legacy codebase)
+    "C416",   # dict comprehension (legacy codebase)
+    "SIM112", # SYSTEMROOT (legacy codebase)
+    "SIM102", # nested if (legacy codebase)
+    "N806",   # constant case (legacy codebase)
+    "E402",   # module imports (legacy codebase)
+]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+skip-magic-trailing-comma = true
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+namespace_packages = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+
+[tool.pyinstaller]
+spec-file = "GameLoopTuner.spec"

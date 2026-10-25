@@ -1,0 +1,82 @@
+# GameLoop Tuner .gitignore
+
+# ── Native build ────────────────────────────────────────────────────────────
+# CMake binary trees
+build/
+cmake-build-*/
+out/
+
+# FetchContent caches — the workflow vendors these explicitly, so they stay out
+# of the repository and are re-downloaded by `release.yml`.
+native/third_party/
+
+# Intermediate objects / libs
+*.obj
+*.o
+*.lib
+*.pdb
+*.ilk
+*.exp
+
+# The shipped artefact is produced by CI, never committed.
+*.exe
+*.manifest
+
+# ── Legacy Python ───────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.installed.cfg
+MANIFEST
+.venv/
+venv/
+env/
+
+# PyInstaller (archived under legacy-python/)
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+
+# ── User data that must never be committed ──────────────────────────────────
+# These are produced by running the tuner against a real GameLoop install and
+# can contain keymap blobs and device identifiers.
+Configs.db
+Configs.db.bak-*
+smk.conf
+smk.conf.bak-*
+tuner-journal.json
+journal_*.jsonl
+ano_tmp_quarantine/
+GameLoopTuner-report-*.txt
+*.log
+logs/
+
+# ── IDE / OS ────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── Packaging ───────────────────────────────────────────────────────────────
+*.msi
+*.zip
+*.7z
+
+# ── Local development ───────────────────────────────────────────────────────
+*.local.py
+local_settings.py
+.ruff_cache/
+imgui.ini

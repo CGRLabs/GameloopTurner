@@ -8,6 +8,7 @@
 #include "glt/ui/pages.hpp"
 
 #include "glt/core/db.hpp"
+#include "glt/core/i18n.hpp"
 #include "glt/core/paths.hpp"
 #include "glt/core/strings.hpp"
 #include "glt/ui/fonts.hpp"
@@ -19,6 +20,8 @@
 
 namespace glt::ui {
 namespace {
+
+using glt::i18n::tr;
 
 ImVec4 col(theme::Rgb c) { return ImVec4(c.r, c.g, c.b, c.a); }
 
@@ -67,7 +70,7 @@ void backup_row(App& app, const backups::BackupEntry& b, std::size_t index) {
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col(theme::kErrorBg));
     ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kError));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f, 3.0f));
-    if (ImGui::SmallButton("Restore")) app.restore_backup(index);
+    if (ImGui::SmallButton(tr("Restore"))) app.restore_backup(index);
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
 
@@ -83,18 +86,18 @@ void draw_backups(App& app) {
     ImGui::BeginChild("##bak_scroll", ImVec2(0, 0), ImGuiChildFlags_None);
     theme::pop_transparent();
 
-    widgets::page_header("Backups",
-                         "Timestamped Configs.db and smk.conf backups. Restore to undo "
-                         "changes.");
+    widgets::page_header(tr("Backups"),
+                         tr("Timestamped Configs.db and smk.conf backups. Restore to undo "
+                         "changes."));
 
 
     // ── Actions ────────────────────────────────────────────────────────────
     // action_row returns 0 / 1 / -1. Comparing the result with `== 0` and
     // falling through to `else` would treat "nothing pressed" (-1) as a click.
-    const int action = widgets::action_row("Backup Now", "Refresh", !app.busy());
+    const int action = widgets::action_row(tr("Backup Now"), tr("Refresh"), !app.busy());
 
     if (action == 0) {
-        app.ask("Take a fresh backup of Configs.db now?",
+        app.ask(tr("Take a fresh backup of Configs.db now?"),
                 [app_ptr = &app](bool yes) {
                     if (!yes) return;
                     app_ptr->log_group("Backup");
@@ -125,7 +128,7 @@ void draw_backups(App& app) {
 
     const auto& list = app.backups();
     if (list.empty()) {
-        widgets::body_text("No backups found. Apply a fix, or use Backup Now above.",
+        widgets::body_text(tr("No backups found. Apply a fix, or use Backup Now above."),
                            ImGui::GetContentRegionAvail().x, col(theme::kTextDim));
     } else {
         // Newest first.
@@ -140,9 +143,9 @@ void draw_backups(App& app) {
 
     ImGui::Dummy(ImVec2(0, 6));
     static bool show_raw_bak = false;
-    ImGui::Checkbox("Show raw paths", &show_raw_bak);
+    ImGui::Checkbox(tr("Show raw paths"), &show_raw_bak);
     if (show_raw_bak && !app.backups().empty()) {
-        theme::begin_card("Raw backup paths");
+        theme::begin_card(tr("Raw backup paths"));
         ImGui::PushFont(fonts::current().small_text);
         for (const auto& b : app.backups()) {
             ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextDim));

@@ -14,9 +14,18 @@
 
 #include <string>
 
+// Single source of truth: the CMake build defines GLT_VERSION from
+// project(... VERSION ...) (see glt_configure_variant + the installer target),
+// so a release cannot ship two disagreeing numbers. The #ifndef fallback only
+// exists so tooling that compiles report.hpp outside the CMake tree still has
+// a value.
+#ifndef GLT_VERSION
+#define GLT_VERSION "2.0.0"
+#endif
+
 namespace glt::report {
 
-inline constexpr const char* kVersion = "2.0.0";
+inline constexpr const char* kVersion = GLT_VERSION;
 
 // Registry values that are dropped rather than redacted.
 [[nodiscard]] bool is_sensitive_key(const std::string& key);

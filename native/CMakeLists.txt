@@ -9,7 +9,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(GameLoopTuner
-        VERSION 2.0.0
+        VERSION 1.2.0
         DESCRIPTION "GameLoop Tuner — native"
         LANGUAGES C CXX)
 
@@ -49,6 +49,8 @@ set(GLT_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/app.manifest")
 set(GLT_ICON     "${CMAKE_CURRENT_BINARY_DIR}/mythic.ico")
 configure_file(cmake/app.manifest.in "${GLT_MANIFEST}" COPYONLY)
 configure_file("${CMAKE_SOURCE_DIR}/../mythic.ico" "${GLT_ICON}" COPYONLY)
+set(GLT_BUNDLE_ICON "${CMAKE_CURRENT_BINARY_DIR}/gltbak.ico")
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/gltbak.ico" "${GLT_BUNDLE_ICON}" COPYONLY)
 set(GLT_RC "${CMAKE_CURRENT_BINARY_DIR}/glt_resources.rc")
 configure_file(cmake/glt_resources.rc "${GLT_RC}" COPYONLY)
 
@@ -198,6 +200,7 @@ set(GLT_UI_SOURCES
     src/ui/page_vm_priority.cpp
     src/ui/page_network.cpp
     src/ui/page_backups.cpp
+    src/ui/page_backup_bundle.cpp
     src/ui/page_logs.cpp
     src/ui/page_about.cpp)
 
@@ -208,9 +211,14 @@ set(GLT_UI_SOURCES
 set(GLT_CORE_SHARED
     src/core/strings.cpp
     src/core/log.cpp
+    src/core/i18n.cpp
+    src/core/translations.cpp
+    src/core/update.cpp
+    src/core/preflight.cpp
     src/core/registry.cpp
     src/core/hosts.cpp
     src/core/backups.cpp
+    src/core/bundle.cpp
     src/core/journal.cpp
     src/core/disk.cpp
     src/core/drift.cpp
@@ -256,6 +264,10 @@ function(glt_configure_variant target macro)
         WINVER=0x0A00
         _WIN32_WINNT=0x0A00
         NTDDI_VERSION=0x0A000000
+        # Single source of truth for the version: project(... VERSION ...). The
+        # installer already gets the same define; report::kVersion and the
+        # update check read it so a release cannot ship two disagreeing numbers.
+        GLT_VERSION="${PROJECT_VERSION}.beta"
         ${macro})
 
     target_link_libraries(${target} PUBLIC
@@ -265,7 +277,9 @@ function(glt_configure_variant target macro)
         d3d11 dxgi advapi32 shell32 user32 psapi ole32 gdi32 shlwapi dwmapi
         # comctl32: InitCommonControlsEx (common controls / themed dialogs).
         # ws2_32:   getaddrinfo + socket for the hosts-file probe.
-        comctl32 ws2_32)
+        # winhttp:  the update check + setup download (HTTPS, system proxy).
+        # bcrypt:   SHA-256 of the downloaded setup before it is allowed to run.
+        comctl32 ws2_32 winhttp bcrypt)
 
     glt_size_optimise(${target})
 endfunction()

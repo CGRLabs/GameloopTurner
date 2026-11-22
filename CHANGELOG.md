@@ -5,6 +5,63 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+* **Self-update from GitHub Releases.** One silent check per launch against
+  `api.github.com/repos/CGRLabs/GameloopTurner` (WinHTTP, system proxy, 5 s
+  timeouts); when a newer release exists, the About page grows an *Updates*
+  card and the sidebar marks the About entry with an amber dot. The asset for
+  the running build is selected automatically — the setup exe when attached
+  directly, else the variant portable exe (`GameLoopTuner-Beta.exe` /
+  `GameLoopTuner-Hub.exe`), matching what `release.yml` actually publishes.
+  Downloads stream into %TEMP% (or the install directory for the portable
+  path) while being hashed, and are **refused unless the SHA-256 matches the
+  digest the release API reports** — a digestless candidate is skipped, not
+  trusted. Install is user-confirmed: the setup path launches the installer
+  via `runas` and exits; the portable path self-replaces (running binary
+  parked as `<exe>.old`, cleaned up next launch, tuner restarts). Repo URL is
+  the current CGRLabs home — the old realLLUKS name no longer resolves on
+  the API (HTTP 404), and the About page links were moved with it.
+  A `--update-check` console flag exercises the real network path and prints
+  the verdict (also the CI-friendly smoke test).
+* **UI localisation.** English, Arabic, Spanish, Portuguese, Indonesian,
+  Russian, Turkish and Vietnamese. Detected from the Windows display
+  language, overridable from a new About card (instant switch — the font
+  atlas now covers Latin Extended, Cyrillic, Arabic and Vietnamese diacritics
+  up front), persisted to `%APPDATA%\GameLoopTuner\language.txt` with an
+  "Automatic (Windows)" default. The lookup key IS the English string, so a
+  missing translation degrades to English, never to a blank widget. Tables
+  are one shared key list plus per-language positional arrays with
+  `static_assert` alignment — a forgotten entry is a compile error. Logs and
+  the diagnostic report stay English deliberately (bug-report material).
+* **Install preflight.** A read-only schema check (`glt/core/preflight`)
+  verifies the install still matches what the fixes were reverse-engineered
+  against: install root, Configs.db, expected tables/columns, engine keymap
+  state, and the smk.conf shape (blinded + read-only reads as healthy).
+  The Dashboard shows the verdict as an *Install Health* card, **Apply All
+  refuses to run** on an INCOMPATIBLE verdict instead of silently no-op'ing
+  after a GameLoop schema change, and the report gains a `[preflight]`
+  section so a broken install can be supported from the report alone.
+* Unit tests for all three: version parse/compare (incl. prerelease tags
+  like `1.2.0.beta` and the "10.0.0 vs 9.99.99" numeric trap), release
+  selection + digest refusal, SHA-256 known vectors, i18n fallback + table
+  load, and the preflight pass/warn/fail matrix against fixture databases.
+
+### Changed
+
+* **Version is single-sourced.** `report::kVersion` now reads
+  `GLT_VERSION` from `project(... VERSION ...)` (the installer target already
+  did); a release cannot ship two disagreeing numbers.
+* **CI size regression line recalibrated 2.0 → 2.2 MB.** The 2.0 line
+  predates the self-updater and the embedded translation tables (~+170 KB of
+  deliberate scope). The alarm stays; it is recalibrated, not removed, and
+  the trims that fit most of the growth under it are real: translation keys
+  are stored once instead of per language, and the longest help paragraphs
+  are translated only where they matter most (Arabic full, Spanish/
+  Portuguese minus a few paragraphs, the rest short-string only).
+
 ## [2.0.0] — 2026-10-18
 
 ### Added

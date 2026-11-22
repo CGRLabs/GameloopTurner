@@ -91,6 +91,78 @@ usually after an app update. Re-apply the recommended fix.
 
 ---
 
+## Install health (preflight)
+
+Every fix rests on schema assumptions reverse-engineered from live GameLoop
+builds. A GameLoop update that changes them would turn fixes into quiet
+no-ops — writes that succeed but mean nothing. The preflight converts that
+into a loud verdict **before** anything writes:
+
+* The **Dashboard** shows an *Install Health* card: HEALTHY / WARNINGS /
+  INCOMPATIBLE, with the failing check named.
+* **Apply All refuses to run** when the verdict is INCOMPATIBLE, and logs the
+  exact checks that failed — instead of silently doing nothing.
+* The verdict and every check land in the **diagnostic report**
+  (`[preflight]` section), so a broken install can be supported from the
+  report alone.
+
+The checks are read-only and take milliseconds: install root, Configs.db,
+expected tables and columns, engine keymap state, and the `smk.conf` shape
+(including the healthy post-quarantine state: blinded + read-only).
+
+---
+
+## Auto-update
+
+The tuner checks GitHub Releases once per launch (silent; offline is invisible
+and logged at Info level). When a newer release exists, the **About** page
+shows an *Updates* card with a **Download & Install** button, and the sidebar
+marks the About entry with an amber dot.
+
+* The release is fetched from `api.github.com/repos/CGRLabs/GameloopTurner`.
+* The asset for this build is selected automatically: the setup exe when the
+  release attaches one directly, otherwise the portable exe for the compiled
+  variant (`GameLoopTuner-Beta.exe` / `GameLoopTuner-Hub.exe`).
+* Downloads are **verified against the SHA-256 digest the release API
+  reports** before anything may run. No digest, no install — a candidate
+  without one is skipped, never trusted. A mismatch deletes the download.
+* The setup path launches the installer (which self-elevates) and exits the
+  tuner; the portable path self-replaces: the running binary is parked as
+  `<exe>.old` (deletable next launch), the verified update takes its exact
+  name and place, and the tuner restarts.
+* Nothing installs without the confirm prompt, and `Check for updates` is
+  always available on the About page.
+
+For a network-path smoke test from a terminal:
+`GameLoopTuner.exe --update-check` prints the latest release, the current
+version, the selected asset and its digest, and the verdict.
+
+---
+
+## Languages
+
+The UI ships in **English, العربية, Español, Português, Bahasa Indonesia,
+Русский, Türkçe, Tiếng Việt**.
+
+* The language is detected from the Windows display language on first launch
+  and can be changed any time on the **About** page — switching is instant,
+  no restart (every glyph any language needs is already in the font atlas).
+* “Automatic (Windows)” follows the Windows display language; a picked
+  language is pinned and saved to `%APPDATA%\GameLoopTuner\language.txt`.
+* Missing translations degrade to English by design — never to a blank
+  widget. v1 coverage: Arabic is complete; Spanish/Portuguese cover
+  everything but a few longest help paragraphs; Indonesian, Russian, Turkish
+  and Vietnamese cover the short UI strings, with long help paragraphs still
+  in English.
+* The Logs page and the diagnostic report stay English on purpose: they are
+  what you paste into a bug report.
+
+Translations live in `native/src/core/translations.cpp` as one shared key
+list plus per-language value arrays; a forgotten entry is a compile error
+(`static_assert`), never a shifted row.
+
+---
+
 ## Build from source
 
 Requires Visual Studio 2022 or Build Tools with the *Desktop development with
@@ -116,16 +188,16 @@ and CMake will use them instead.
 
 ### Size
 
-The release binary is **1.75 MB** and imports only system DLLs — no
+The release binary is **~2.0 MB** and imports only system DLLs — no
 `vcruntime140.dll`, no `msvcp140.dll`, nothing to install.
 
 | Section | Size |
 |---|---|
-| `.text` | ~1.39 MB |
+| `.text` | ~1.42 MB |
 | ├─ `sqlite3.c` | ~622 KB |
 | ├─ imgui (6 TUs) | ~249 KB |
-| └─ this application | ~200 KB |
-| `.rdata` | ~487 KB |
+| └─ this application | ~260 KB |
+| `.rdata` | ~540 KB |
 
 The port spec asked for ~1.5 MB. The remaining ~250 KB is SQLite's
 virtual-table code, which cannot be removed with a define —
@@ -133,6 +205,11 @@ virtual-table code, which cannot be removed with a define —
 declaration, and the amalgamation fails to compile with C2129. Removing it
 would mean vendoring a patched amalgamation; the supported define set is
 documented in `native/cmake/sqlite_flags.cmake`.
+
+The 2.0 release added the self-updater (WinHTTP + BCrypt), the localisation
+tables (7 languages) and the install preflight, which is what moved the
+binary from 1.75 MB to ~2.0 MB; the CI regression line in `release.yml` was
+recalibrated to match.
 
 ---
 

@@ -13,12 +13,17 @@
 #include "glt/ui/variant_picker.hpp"
 
 #include "glt/core/variant.hpp"
+#include "glt/core/i18n.hpp"
 #include "glt/ui/app.hpp"
 #include "glt/ui/fonts.hpp"
 #include "glt/ui/theme.hpp"
 
+#include <cstdio>
+
 namespace glt::ui {
 namespace {
+
+using glt::i18n::tr;
 
 ImVec4 col(theme::Rgb c) { return ImVec4(c.r, c.g, c.b, c.a); }
 
@@ -46,13 +51,13 @@ bool choice_card(const char* id, const char* title, const char* body, bool recom
     if (recommended) {
         ImGui::SameLine(0, 8.0f);
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kAccent));
-        ImGui::TextUnformatted("DEFAULT");
+        ImGui::TextUnformatted(tr("DEFAULT"));
         ImGui::PopStyleColor();
     }
     if (is_compiled) {
         ImGui::SameLine(0, 8.0f);
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextDim));
-        ImGui::TextUnformatted("(this build)");
+        ImGui::TextUnformatted(tr("(this build)"));
         ImGui::PopStyleColor();
     }
 
@@ -64,7 +69,7 @@ bool choice_card(const char* id, const char* title, const char* body, bool recom
 
     ImGui::Dummy(ImVec2(0, 6));
 
-    const bool clicked = ImGui::Button("Select", ImVec2(120.0f, 30.0f)) != 0;
+    const bool clicked = ImGui::Button(tr("Select"), ImVec2(120.0f, 30.0f)) != 0;
 
     ImGui::EndChild();
     ImGui::PopStyleVar(3);
@@ -88,15 +93,16 @@ void draw_variant_picker(App& app) {
                                    ImGuiWindowFlags_NoSavedSettings)) {
         ImGui::PushFont(fonts::current().heading);
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextPrimary));
-        ImGui::TextUnformatted("Which GameLoop do you have?");
+        ImGui::TextUnformatted(tr("Which GameLoop do you have?"));
         ImGui::PopStyleColor();
         ImGui::PopFont();
 
         ImGui::PushFont(fonts::current().small_text);
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextMuted));
         ImGui::TextWrapped(
-            "The tuner ships as two builds. Pick the GameLoop you actually have — the answer "
-            "is remembered and never asked again. You can change it later from the About page.");
+            "%s",
+            tr("The tuner ships as two builds. Pick the GameLoop you actually have — the answer "
+               "is remembered and never asked again. You can change it later from the About page."));
         ImGui::PopStyleColor();
         ImGui::PopFont();
 
@@ -105,8 +111,8 @@ void draw_variant_picker(App& app) {
         const variant::Id compiled = variant::compiled();
 
         if (choice_card("beta", variant::label(variant::Id::Beta),
-                        "The original validated target. Install root from the Program Files "
-                        "scan, full performance-flag set, AppMarket.exe accepted.",
+                        tr("The original validated target. Install root from the Program Files "
+                           "scan, full performance-flag set, AppMarket.exe accepted."),
                         /*recommended=*/true,
                         /*is_compiled=*/compiled == variant::Id::Beta)) {
             app.choose_variant(variant::Id::Beta);
@@ -115,9 +121,9 @@ void draw_variant_picker(App& app) {
         ImGui::Dummy(ImVec2(0, 6));
 
         if (choice_card("hub", variant::label(variant::Id::Hub),
-                        "The multi-app Arena / TAC build (e.g. C:\\ARENA\\GameLoop). Install "
-                        "root from HKLM InstallPath, new GLABox/AceKeeper processes, no "
-                        "low_latency_mode or frame-gen flags.",
+                        tr("The multi-app Arena / TAC build (e.g. C:\\ARENA\\GameLoop). Install "
+                           "root from HKLM InstallPath, new GLABox/AceKeeper processes, no "
+                           "low_latency_mode or frame-gen flags."),
                         /*recommended=*/false,
                         /*is_compiled=*/compiled == variant::Id::Hub)) {
             app.choose_variant(variant::Id::Hub);
@@ -127,7 +133,10 @@ void draw_variant_picker(App& app) {
 
         ImGui::PushFont(fonts::current().small_text);
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextDim));
-        ImGui::TextWrapped("This binary is the %s build.", variant::label(compiled));
+        char build_buf[96];
+        std::snprintf(build_buf, sizeof(build_buf), tr("This binary is the %s build."),
+                      variant::label(compiled));
+        ImGui::TextWrapped("%s", build_buf);
         ImGui::PopStyleColor();
         ImGui::PopFont();
 

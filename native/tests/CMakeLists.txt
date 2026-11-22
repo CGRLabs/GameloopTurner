@@ -22,7 +22,10 @@ if(GLT_TARGET_BETA)
         test_fixes.cpp
         test_fonts.cpp
         test_layout.cpp
-        test_system.cpp)
+        test_system.cpp
+        test_i18n.cpp
+        test_update.cpp
+        test_preflight.cpp)
 
     target_link_libraries(glt_tests PRIVATE glt_core)
     target_include_directories(glt_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

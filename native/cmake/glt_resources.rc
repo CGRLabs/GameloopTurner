@@ -26,6 +26,8 @@
 
 1 ICON "mythic.ico"
 
+2 ICON "gltbak.ico"
+
 // ── VERSIONINFO ─────────────────────────────────────────────────────────────
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION     2,0,0,0

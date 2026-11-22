@@ -8,6 +8,7 @@
 #include "glt/core/log.hpp"
 #include "glt/core/paths.hpp"
 #include "glt/core/perf.hpp"
+#include "glt/core/preflight.hpp"
 #include "glt/core/procs.hpp"
 #include "glt/core/registry.hpp"
 #include "glt/core/strings.hpp"
@@ -113,6 +114,28 @@ std::string build() {
     line(os, "adb=" + std::string(paths::adb_exe(root).empty() ? "missing" : "present"));
     line(os, "ano_tmp=" + or_unknown(paths::ano_tmp_dir()));
     line(os, "");
+
+    // ── preflight ──────────────────────────────────────────────────────────
+    // The same verdict the Dashboard shows and Apply All gates on. A support
+    // request for "the fix did nothing" starts by reading this section.
+    {
+        const auto pf = preflight::run();
+        const char* overall = pf.overall == glt::preflight::Status::Ok
+                                  ? "ok"
+                                  : (pf.overall == glt::preflight::Status::Warn
+                                         ? "warn"
+                                         : "fail");
+        line(os, "[preflight]");
+        line(os, std::string("overall=") + overall + " (" + pf.summary_line() + ")");
+        for (const auto& c : pf.checks) {
+            const char* st = c.status == glt::preflight::Status::Ok
+                                 ? "ok"
+                                 : (c.status == glt::preflight::Status::Warn ? "warn" : "fail");
+            line(os, std::string("  ") + st + " " + c.name +
+                         (c.detail.empty() ? "" : ": " + c.detail));
+        }
+        line(os, "");
+    }
 
     // ── processes ──────────────────────────────────────────────────────────
     line(os, "[processes]");

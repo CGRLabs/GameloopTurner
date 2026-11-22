@@ -17,6 +17,7 @@ void draw_performance(App& app);
 void draw_vm_priority(App& app);
 void draw_network(App& app);
 void draw_backups(App& app);
+void draw_backup_bundle(App& app);
 void draw_logs(App& app);
 void draw_about(App& app);
 

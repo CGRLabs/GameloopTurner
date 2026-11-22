@@ -86,7 +86,8 @@ std::vector<std::string> blind_smk_file(const std::vector<int>& tex_ids, bool dr
             changed = true;
             notes.push_back("smk.conf: blind Tex " + std::to_string(tid) + " (" + m.comm + ")");
         } else {
-            notes.push_back("smk.conf: Tex " + std::to_string(tid) + " already absent");
+            // Absent is success: one fewer jump path to remove, not a failure.
+            notes.push_back("smk.conf: Tex " + std::to_string(tid) + " already absent (ok)");
         }
     }
 
@@ -305,14 +306,15 @@ bool needs_gameloop_closed(const std::vector<Key>& keys) {
 std::vector<std::string> pin_flat(bool dry_run) {
     const std::wstring dbp = require_db();
 
-    // Two scopes, two connections: one to discover, one to build the ops. The
-    // Python build leaked a connection here (dbmod.connect(dbp).cursor() was
-    // never closed), and SQLite holds a file handle for the life of the
-    // connection.
+    // Two scopes, two connections: one to discover, one to build the ops.
+    // Mode-restricted pinning (pick_flat_for_mode) so a 0-rule BR layout can
+    // never be selected when pinning multiplayer — required when GameLoop
+    // ships Hub-style keymapping on a Beta install.
     std::optional<keymaps::Solution> pick;
     {
         db::Connection con(dbp);
-        pick = keymaps::pick_flat(keymaps::solutions(con, paths::kPkg));
+        pick = keymaps::pick_flat_for_mode(keymaps::solutions(con, paths::kPkg),
+                                           kModeMultiplayer, "mp");
     }
     if (!pick) {
         throw db::Error("no flat (0-rule) layout found on this PC");
@@ -389,7 +391,7 @@ std::vector<std::string> blind_tex(bool dry_run) {
         if (keymaps::blind_tex_in_text(smk, tid, &m)) {
             blinded.push_back("blind Tex " + std::to_string(tid) + " (" + m.comm + ")");
         } else {
-            head.push_back("Tex " + std::to_string(tid) + " already absent");
+            head.push_back("Tex " + std::to_string(tid) + " already absent (ok)");
         }
     }
 
@@ -419,6 +421,17 @@ std::vector<std::string> blind_tex(bool dry_run) {
 
 std::vector<std::string> scrub_recent(bool dry_run) {
     const std::wstring dbp = require_db();
+
+    // Do not auto-create recentlyused_mode on builds that do not track it.
+    bool present = false;
+    {
+        db::Connection con(dbp);
+        present = keymaps::read_recentlyused(con, paths::kPkg).has_value();
+    }
+    if (!present) {
+        return {"recentlyused_mode." + std::string(paths::kPkg) +
+                " absent on this GameLoop build; nothing to scrub"};
+    }
     return db::guarded_updates(dbp, {keymaps::scrub_recent_op(paths::kPkg, 145)}, dry_run).notes;
 }
 
@@ -591,13 +604,15 @@ std::vector<std::string> full_chain(bool dry_run) {
     std::optional<keymaps::Solution> pick;
     std::vector<keymaps::Solution> sols;
     std::string smk;
+    bool recentlyused_present = false;
 
     {
         db::Connection con(dbp);
 
-        // 1. Pin a flat layout.
+        // 1. Pin a flat layout, restricted to mode 145 so a 0-rule BR layout
+        //    can never be selected as the MP pin (Hub-style keymapping).
         sols = keymaps::solutions(con, paths::kPkg);
-        pick = keymaps::pick_flat(sols);
+        pick = keymaps::pick_flat_for_mode(sols, kModeMultiplayer, "mp");
         if (!pick) {
             throw db::Error("no flat (0-rule) layout found on this PC");
         }
@@ -606,7 +621,10 @@ std::vector<std::string> full_chain(bool dry_run) {
         ops.insert(ops.end(), pin_ops.begin(), pin_ops.end());
         head.push_back("pin: " + pick->name + " (" + pick->sol + ")");
 
-        // 2. Flatten both destinations and scrub the history after each.
+        recentlyused_present = keymaps::read_recentlyused(con, paths::kPkg).has_value();
+
+        // 2. Flatten both destinations and scrub the history after each, when
+        //    the build tracks recentlyused at all.
         for (const auto& [mode, sol, name] :
              {std::tuple{kModeDmz, kSolDmz, kNameDmz}, std::tuple{kModeBr, kSolBr, kNameBr}}) {
             const auto official = keymaps::read_official_blob(con, paths::kPkg, mode, sol);
@@ -626,7 +644,11 @@ std::vector<std::string> full_chain(bool dry_run) {
             ops.push_back(std::move(blob));
 
             head.push_back("flatten " + std::string(name) + ": registered + 0-rule blob");
-            ops.push_back(keymaps::scrub_recent_op(paths::kPkg, 145));
+            if (recentlyused_present) {
+                ops.push_back(keymaps::scrub_recent_op(paths::kPkg, 145));
+            } else {
+                head.push_back("scrub recentlyused: absent on this build, skipped");
+            }
         }
 
         // 3. Flatten any SMART layout living inside mode 145 itself.
@@ -657,7 +679,7 @@ std::vector<std::string> full_chain(bool dry_run) {
             head.push_back("blind: Tex " + std::to_string(tid) + " trigger removed (" +
                            m.comm + ")");
         } else {
-            head.push_back("blind: Tex " + std::to_string(tid) + " already absent");
+            head.push_back("blind: Tex " + std::to_string(tid) + " already absent (ok)");
         }
     }
     if (!blinded.empty()) {
@@ -760,13 +782,22 @@ std::vector<Key> detect_applied() {
         }
 
         bool flat_dmz = false, flat_br = false, pin_ok = false;
+        std::optional<std::string> mp_active;
+        {
+            std::vector<db::Value> p; // keymap_mode.unlogin.<pkg>.145
+            p.emplace_back(keymaps::mode_key(paths::kPkg, kModeMultiplayer));
+            if (auto v = con.query_one("SELECT value0 FROM key_map_configs_cache_official WHERE key=?", p)) {
+                mp_active = v->as_text();
+            }
+        }
         for (const auto& s : keymaps::solutions(con, paths::kPkg)) {
             if (s.mode == kModeDmz && s.sol == kSolDmz && s.rule_count == 0) flat_dmz = true;
             if (s.mode == kModeBr && s.sol == kSolBr && s.rule_count == 0) flat_br = true;
-            // pin: mode 145's active solution has 0 rules. ANY 0-rule layout in
-            // mode 145 satisfies this — the engine lands on whichever is
-            // selected, and a flattened one cannot switch away.
-            if (s.mode == kModeMultiplayer && s.rule_count == 0) pin_ok = true;
+            // pin: mode 145's ACTIVE solution has 0 rules. A flat layout that
+            // is NOT selected cannot be the pin target — Hub-style keymapping
+            // keeps "Multi Player" (93 rules) and "MP" (0 rules) in mode 145.
+            if (s.mode == kModeMultiplayer && s.rule_count == 0 && mp_active &&
+                *mp_active == s.sol) pin_ok = true;
         }
 
         // The durable guarantee is the read-only lock. The engine regenerates

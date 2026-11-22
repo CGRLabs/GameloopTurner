@@ -1,6 +1,8 @@
 #include "glt/ui/app.hpp"
 
 #include "glt/core/db.hpp"
+#include "glt/core/bundle.hpp"
+#include "glt/core/i18n.hpp"
 #include "glt/core/journal.hpp"
 #include "glt/core/log.hpp"
 #include "glt/core/paths.hpp"
@@ -9,33 +11,43 @@
 #include "glt/core/registry.hpp"
 #include "glt/core/report.hpp"
 #include "glt/core/strings.hpp"
+#include "glt/core/update.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <fstream>
 #include <windows.h>
 #include <shellapi.h>
+#include <shobjidl.h>
+#include <shlobj_core.h>
 
 namespace glt::ui {
 
+using glt::i18n::tr;
+
 const char* page_title(Page p) {
     switch (p) {
-        case Page::Dashboard:    return "Dashboard";
-        case Page::Keymaps:      return "Keymaps";
-        case Page::Performance:  return "Performance";
-        case Page::VmPriority:   return "VM & Priority";
-        case Page::Network:      return "Network & Servers";
-        case Page::Backups:      return "Backups";
-        case Page::Logs:         return "Logs";
-        case Page::About:        return "About";
+        case Page::Dashboard:    return tr("Dashboard");
+        case Page::Keymaps:      return tr("Keymaps");
+        case Page::Performance:  return tr("Performance");
+        case Page::VmPriority:   return tr("VM & Priority");
+        case Page::Network:      return tr("Network & Servers");
+        case Page::Backups:      return tr("Backups");
+        case Page::BackupBundle: return tr("Backup Bundle");
+        case Page::Logs:         return tr("Logs");
+        case Page::About:        return tr("About");
     }
     return "?";
 }
 
-const char* drift_text(DriftState s) {
+std::string drift_text(DriftState s) {
+    // The glyph prefix stays source-drawn (it comes from the symbol ranges in
+    // fonts.hpp); only the word is translated. Returned by value because the
+    // translated word no longer lives in static storage.
     switch (s) {
-        case DriftState::NoBaseline: return "No baseline";
-        case DriftState::Stable:     return "\xE2\x9A\x99 Stable";       // ● Stable
-        case DriftState::Drifted:    return "\xE2\x9A\xA0 Drifted";     // ⚠ Drifted
+        case DriftState::NoBaseline: return std::string(tr("No baseline"));
+        case DriftState::Stable:     return "\xE2\x9A\x99 " + std::string(tr("Stable"));
+        case DriftState::Drifted:    return "\xE2\x9A\xA0 " + std::string(tr("Drifted"));
     }
     return "?";
 }
@@ -52,6 +64,18 @@ App::~App() { shutdown(); }
 
 void App::startup() {
     log("GameLoop Tuner started.", log::Level::Info);
+
+    // ── Language ────────────────────────────────────────────────────────────
+    // Persisted choice wins; otherwise follow the Windows UI language. Must
+    // run before any worker exists (i18n.hpp threading contract) and before
+    // the first tr() anywhere in the UI.
+    language_ = i18n::init();
+    {
+        const auto saved = i18n::load_choice();
+        language_auto_ = !saved || str::ascii_lower(str::trim(*saved)) == "auto";
+    }
+    log("UI language: " + language_ + (language_auto_ ? " (auto)." : " (saved choice)."),
+        log::Level::Info);
 
     // ── First-launch variant selection ─────────────────────────────────────
     // Never auto-detect: the persisted choice is the user's answer to "which
@@ -102,6 +126,12 @@ void App::startup() {
     refresh_dashboard();
     refresh_backups();
 
+    // ── Update check (silent, worker) ─────────────────────────────────────
+    // One check per launch against the GitHub API (well within its unauthenti-
+    // cated rate limit). Failures log at Info: offline is a normal state, not
+    // an alarm. The result surfaces as an About-card badge, never as a popup.
+    check_update(false);
+
     // ── What's new (once per version) ──────────────────────────────────────
     const std::wstring dbp2 = paths::appdata_db();
     if (!dbp2.empty()) {
@@ -117,7 +147,10 @@ void App::startup() {
                 "override, high-ping help). Dashboard now shows CODM live settings. "
                 "Help tooltips (?) added across pages.",
                 log::Level::Info);
-            toast("Welcome to v" + std::string(report::kVersion), log::Level::Success);
+            char welcome[64];
+            std::snprintf(welcome, sizeof(welcome), tr("Welcome to v%s"),
+                          report::kVersion);
+            toast(welcome, log::Level::Success);
             std::ofstream vf(ver_path, std::ios::trunc);
             if (vf) vf << report::kVersion;
         }
@@ -173,6 +206,34 @@ void App::clear_variant_choice() {
         log("Could not clear the variant choice file.", log::Level::Warning);
     }
     variant_picker_open_ = true;
+}
+
+// ── Language ────────────────────────────────────────────────────────────────
+
+void App::choose_language(std::string_view code) {
+    const std::string c = str::ascii_lower(str::trim(code));
+
+    // Empty or "auto": clear the pin and follow the Windows UI language again.
+    if (c.empty() || c == "auto") {
+        language_auto_ = true;
+        i18n::save_choice("auto");
+        const std::string detected = i18n::detect_system_language();
+        if (!i18n::set_language(detected)) i18n::set_language("en");
+        language_ = std::string(i18n::current());
+        log("UI language: " + language_ + " (auto).", log::Level::Info);
+        return;
+    }
+
+    if (i18n::set_language(c)) {
+        language_auto_ = false;
+        i18n::save_choice(c);
+        language_ = c;
+        log("UI language: " + c + " (saved choice).", log::Level::Info);
+        return;
+    }
+
+    log("UI language '" + c + "' is not available; keeping " + language_ + ".",
+        log::Level::Warning);
 }
 
 // ── Thread-safe UI queue ─────────────────────────────────────────────────────
@@ -363,6 +424,10 @@ void App::refresh_dashboard() {
             }
         }
 
+        // Install-shape verdict: cheap, read-only, and what turns a GameLoop
+        // schema change into a visible status instead of silent no-op fixes.
+        d.preflight = preflight::run();
+
         // Assign on the render thread — dash_ is read every frame by every page.
         post([this, d = std::move(d)]() mutable { dash_ = std::move(d); });
     });
@@ -418,8 +483,13 @@ void App::restore_backup(std::size_t index) {
 
     const auto item = backups_[index];
 
-    ask("Restore " + str::to_utf8(item.filename) +
-            "?\n\nGameLoop must be closed first. The current file is overwritten.",
+    {
+        char prompt[320];
+        std::snprintf(prompt, sizeof(prompt),
+                      tr("Restore %s?\n\nGameLoop must be closed first. The current "
+                         "file is overwritten."),
+                      str::to_utf8(item.filename).c_str());
+        ask(prompt,
         [this, item](bool yes) {
             if (!yes) {
                 log("Restore cancelled.", log::Level::Warning);
@@ -470,6 +540,255 @@ void App::restore_backup(std::size_t index) {
                 }
             });
         });
+    }
+}
+
+// ── Backup Bundle (.gltbak) ──────────────────────────────────────────────────
+
+void App::create_bundle(std::wstring save_path, std::string title) {
+    busy_.store(true);
+    log_group("Create Bundle");
+
+    workers_.emplace_back([this, save_path = std::move(save_path),
+                           title = std::move(title)] {
+        try {
+            auto b = bundle::capture_bundle(title);
+            if (!bundle::write_bundle(save_path, b)) {
+                post([this] {
+                    log("Bundle write failed.", log::Level::Error);
+                    busy_.store(false);
+                });
+                return;
+            }
+            post([this, path = std::wstring(save_path)] {
+                log("Bundle created: " + str::to_utf8(path), log::Level::Success);
+                busy_.store(false);
+            });
+        } catch (const std::exception& e) {
+            post([this, what = std::string(e.what())] {
+                log("Bundle creation failed: " + what, log::Level::Error);
+                busy_.store(false);
+            });
+        }
+    });
+}
+
+bool App::open_bundle(std::wstring path) {
+    bundle_path_ = std::move(path);
+    try {
+        auto b = bundle::read_bundle(bundle_path_);
+        if (!b) {
+            log("Failed to read bundle (corrupt or tampered).", log::Level::Error);
+            bundle_.reset();
+            bundle_diffs_.clear();
+            return false;
+        }
+        bundle_ = std::move(*b);
+
+        // Compute diff against live system for the preview UI.
+        bundle_diffs_ = bundle::diff_bundle(*bundle_);
+
+        log("Bundle opened: " + bundle_->title, log::Level::Success);
+        return true;
+    } catch (const std::exception& e) {
+        log("Failed to read bundle: " + std::string(e.what()), log::Level::Error);
+        bundle_.reset();
+        bundle_diffs_.clear();
+        return false;
+    }
+}
+
+void App::apply_bundle(bool dry_run) {
+    if (!bundle_) return;
+
+    busy_.store(true);
+    log_group("Apply Bundle");
+
+    workers_.emplace_back([this, dry_run] {
+        try {
+            auto notes = bundle::apply_bundle(*bundle_, bundle_options_, dry_run);
+            post([this, notes = std::move(notes), dry_run] {
+                log_many(notes, log::Level::Success);
+                if (!dry_run) {
+                    log("Bundle applied. Relaunch GameLoop.", log::Level::Success);
+                    refresh_dashboard();
+                }
+                busy_.store(false);
+            });
+        } catch (const std::exception& e) {
+            post([this, what = std::string(e.what())] {
+                log("Bundle apply failed: " + what, log::Level::Error);
+                busy_.store(false);
+            });
+        }
+    });
+}
+
+void App::clear_bundle() {
+    bundle_.reset();
+    bundle_diffs_.clear();
+    bundle_path_.clear();
+}
+
+// ── Self-update ────────────────────────────────────────────────────────────
+
+void App::check_update(bool manual) {
+    if (update_.busy) return;
+    update_.busy = true;
+    if (manual) update_.error.clear();
+
+    workers_.emplace_back([this, manual] {
+        try {
+            auto rel = update::fetch_latest();
+            const bool avail = update::is_newer(rel.tag, report::kVersion);
+            post([this, rel = std::move(rel), avail, manual] {
+                update_.checked = true;
+                update_.busy = false;
+                update_.available = avail;
+                update_.tag = rel.tag;
+                update_.page_url = rel.page_url;
+                update_.asset_url = rel.asset_url;
+                update_.notes = rel.notes;
+                update_.sha256 = rel.sha256;
+                update_.size = rel.asset_size;
+                update_.error.clear();
+                update_.downloaded_ok = false;
+                update_.setup_path.clear();
+                update_.kind = rel.kind;
+                if (avail) {
+                    if (rel.kind == glt::update::Kind::None) {
+                        // Newer tag, but nothing this build can install — the
+                        // release page is the only actionable path.
+                        log("Update available: " + rel.tag +
+                                " — but the release carries no asset this build can "
+                                "install. See the About page.",
+                            log::Level::Info);
+                    } else {
+                        log("Update available: " + rel.tag + " (this build is v" +
+                                report::kVersion + "). See the About page.",
+                            log::Level::Info);
+                    }
+                } else if (manual) {
+                    log("You are on the latest release (v" +
+                            std::string(report::kVersion) + ").",
+                        log::Level::Info);
+                }
+            });
+        } catch (const std::exception& e) {
+            const std::string msg = e.what();
+            post([this, manual, msg] {
+                update_.checked = true;
+                update_.busy = false;
+                update_.error = msg;
+                log(manual ? "Update check failed: " + msg
+                           : "Update check skipped: " + msg,
+                    manual ? log::Level::Warning : log::Level::Info);
+            });
+        }
+    });
+}
+
+void App::install_update() {
+    if (update_.busy || !update_.available) return;
+    update_.busy = true;
+    update_.error.clear();
+
+    workers_.emplace_back([this] {
+        try {
+            // Installer assets land in %TEMP%; a portable self-replace must be
+            // staged on the running exe's own volume so the final move is a
+            // same-volume rename (a cross-volume move would copy over a live
+            // image and fail).
+            std::wstring target;
+            {
+                wchar_t temp_dir[MAX_PATH];
+                const DWORD n = ::GetTempPathW(MAX_PATH, temp_dir);
+                const std::wstring base =
+                    update_.kind == glt::update::Kind::Installer
+                        ? (n > 0 && n < MAX_PATH ? std::wstring(temp_dir, n) : std::wstring())
+                        : update::running_exe_dir();
+                if (!base.empty()) {
+                    target = str::path_join(base,
+                                            str::to_wide("GameLoopTunerSetup-") +
+                                                str::to_wide(update_.tag) + L".exe");
+                }
+            }
+            if (target.empty()) {
+                throw update::Error("could not resolve a download path for the update");
+            }
+
+            update::Release rel;
+            rel.tag = update_.tag;
+            rel.asset_url = update_.asset_url;
+            rel.sha256 = update_.sha256;
+            rel.asset_size = update_.size;
+            rel.kind = update_.kind;
+
+            log_group("Download " + rel.tag);
+            std::uint64_t last_posted = 0;
+            const std::string hex = update::download_verified(
+                rel, target, [this, &last_posted](std::uint64_t done, std::uint64_t total) {
+                    // Throttle queue posts: the frame drain runs at most ~60/s
+                    // and a 1.7 MB download on fast fibre would otherwise post
+                    // hundreds of no-op updates.
+                    if (done - last_posted < 262144 && (total == 0 || done < total)) return;
+                    last_posted = done;
+                    post([this, done, total] {
+                        update_.downloaded = done;
+                        if (total > 0) update_.size = total;
+                    });
+                });
+
+            post([this, target, hex] {
+                update_.downloaded = update_.size;
+                update_.setup_path = target;
+                update_.downloaded_ok = true;
+                update_.busy = false;
+                log("Downloaded and verified (sha256 " + hex.substr(0, 16) + "...).",
+                    log::Level::Success);
+
+                char prompt[256];
+                std::snprintf(prompt, sizeof(prompt),
+                              update_.kind == glt::update::Kind::Installer
+                                  ? tr("Install %s now? The installer closes the tuner and "
+                                       "replaces the current installation.")
+                                  : tr("Install %s now? The tuner replaces itself with the "
+                                       "verified update and restarts."),
+                              update_.tag.c_str());
+                ask(prompt, [this](bool yes) {
+                    if (!yes) {
+                        log("Install postponed; the verified update stays downloaded "
+                            "and can be installed from the About page.",
+                            log::Level::Info);
+                        return;
+                    }
+                    std::string err;
+                    if (update_.kind == glt::update::Kind::Installer) {
+                        if (update::launch_installer(update_.setup_path, err)) {
+                            log("Installer launched; closing the tuner.", log::Level::Info);
+                            request_exit();
+                        } else {
+                            log("Update not installed: " + err, log::Level::Warning);
+                        }
+                    } else {
+                        if (update::self_replace(update_.setup_path, err)) {
+                            log("Update installed; restarting the tuner.", log::Level::Info);
+                            request_exit();
+                        } else {
+                            log("Update not installed: " + err, log::Level::Warning);
+                        }
+                    }
+                });
+            });
+        } catch (const std::exception& e) {
+            const std::string msg = e.what();
+            post([this, msg] {
+                update_.busy = false;
+                update_.error = msg;
+                log("Update download failed: " + msg, log::Level::Error);
+            });
+        }
+    });
 }
 
 // ── Modal ────────────────────────────────────────────────────────────────────
@@ -500,6 +819,41 @@ void App::answer_prompt(bool yes) {
 void App::apply_all() {
     if (busy()) return;
 
+    // ── Pre-flight gate ─────────────────────────────────────────────────────
+    // A GameLoop update can silently change the schema the fixes were reverse-
+    // engineered against. The preflight converts that failure mode — writes
+    // that succeed but mean nothing — into a loud refusal before the first
+    // backup is even taken. Read-only, a few ms.
+    {
+        const auto pf = preflight::run();
+        if (pf.overall == preflight::Status::Fail) {
+            log_group("Pre-flight check FAILED");
+            for (const auto& c : pf.checks) {
+                if (c.status == preflight::Status::Fail) {
+                    log("  " + c.name + ": " + c.detail, log::Level::Error);
+                } else if (c.status == preflight::Status::Warn) {
+                    log("  " + c.name + ": " + c.detail, log::Level::Warning);
+                }
+            }
+            log("Apply aborted - the GameLoop install does not match the schema the "
+                "fixes expect. Re-apply after the next tuner release, and attach the "
+                "diagnostic report if it persists.",
+                log::Level::Error);
+            toast(tr("GameLoop changed too much to apply fixes safely"),
+                  log::Level::Error);
+            show_page(Page::Logs);
+            return;
+        }
+        if (pf.overall == preflight::Status::Warn) {
+            for (const auto& c : pf.checks) {
+                if (c.status == preflight::Status::Warn) {
+                    log("Pre-flight warning - " + c.name + ": " + c.detail,
+                        log::Level::Warning);
+                }
+            }
+        }
+    }
+
     std::vector<fixes::Key> keys = pending_;
     const bool alloc = alloc_pending_;
     const bool clarity = clarity_pending_;
@@ -526,8 +880,12 @@ void App::apply_all() {
     if (!live.empty() && !closable.empty()) {
         // DB and smk.conf writes need GameLoop closed. Ask first — a user may
         // be mid-match and want to finish rather than be closed out.
-        ask("GameLoop is running (" + std::to_string(live.size()) +
-                " processes).\n\nDB and smk.conf writes need it closed.\n\nClose it now?",
+        char prompt[256];
+        std::snprintf(prompt, sizeof(prompt),
+                      tr("GameLoop is running (%d processes).\n\nDB and smk.conf "
+                         "writes need it closed.\n\nClose it now?"),
+                      static_cast<int>(live.size()));
+        ask(prompt,
             [this, keys = std::move(keys), alloc, cores, mem, clarity, level](bool yes) {
                 if (!yes) {
                     log("Apply cancelled - close GameLoop first.", log::Level::Warning);

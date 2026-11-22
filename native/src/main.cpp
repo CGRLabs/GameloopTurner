@@ -33,13 +33,16 @@
 #include <tchar.h>
 
 #include <algorithm>
+#include <cstdio>
 
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
 #include "imgui.h"
 
 #include "glt/core/log.hpp"
+#include "glt/core/report.hpp"
 #include "glt/core/strings.hpp"
+#include "glt/core/update.hpp"
 #include "glt/ui/app.hpp"
 #include "glt/ui/fonts.hpp"
 #include "glt/ui/page_dashboard.hpp"
@@ -402,6 +405,7 @@ void render_frame(glt::ui::App& app) {
         case glt::ui::Page::VmPriority:  glt::ui::draw_vm_priority(app); break;
         case glt::ui::Page::Network:     glt::ui::draw_network(app);     break;
         case glt::ui::Page::Backups:     glt::ui::draw_backups(app);     break;
+        case glt::ui::Page::BackupBundle: glt::ui::draw_backup_bundle(app); break;
         case glt::ui::Page::Logs:        glt::ui::draw_logs(app);        break;
         case glt::ui::Page::About:       glt::ui::draw_about(app);       break;
     }
@@ -550,7 +554,67 @@ constexpr wchar_t kSingleInstanceMutex[] = L"Global\\GameLoopTunerSingleInstance
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
+// ── --update-check console mode ────────────────────────────────────────────
+
+int run_update_check_console() {
+    const bool have_console = ::AttachConsole(ATTACH_PARENT_PROCESS) != 0;
+    FILE* conout = nullptr;
+    if (have_console) {
+        // AttachConsole does not give the CRT stdio streams; CONOUT$ does.
+        freopen_s(&conout, "CONOUT$", "w", stdout);
+        freopen_s(&conout, "CONOUT$", "w", stderr);
+    }
+    auto report = [&](const char* verdict, const char* detail) {
+        if (have_console) {
+            std::printf("%s: %s\n", verdict, detail);
+        } else {
+            ::MessageBoxA(nullptr, detail, verdict, MB_ICONINFORMATION);
+        }
+    };
+
+    try {
+        const glt::update::Release rel = glt::update::fetch_latest();
+        const bool newer = glt::update::is_newer(rel.tag, glt::report::kVersion);
+        std::printf("latest release : %s\n", rel.tag.c_str());
+        std::printf("current build  : v%s\n", glt::report::kVersion);
+        std::printf("asset          : %s (%llu bytes)\n", rel.asset_name.c_str(),
+                    static_cast<unsigned long long>(rel.asset_size));
+        std::printf("sha256         : %s\n", rel.sha256.c_str());
+        report(newer ? "RESULT: UPDATE AVAILABLE" : "RESULT: UP TO DATE",
+               newer ? "A newer release is published on GitHub."
+                     : "This build matches the latest release.");
+        return newer ? 2 : 0;
+    } catch (const std::exception& e) {
+        std::printf("update check FAILED: %s\n", e.what());
+        report("RESULT: CHECK FAILED", e.what());
+        return 1;
+    }
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int) {
+    // 0. --update-check: a console smoke mode for the updater. It must run
+    //    BEFORE the single-instance guard and any UI: the point is to exercise
+    //    the real network path (WinHTTP + JSON + digest) from a terminal, and
+    //    print a verdict a human (or CI) can read. When the parent has no
+    //    console (double-click), the verdict falls back to a MessageBox so it
+    //    is never invisible.
+    {
+        int argc = 0;
+        LPWSTR* const argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+        bool update_check_mode = false;
+        if (argv) {
+            for (int i = 1; i < argc; ++i) {
+                if (::lstrcmpiW(argv[i], L"--update-check") == 0) update_check_mode = true;
+            }
+            ::LocalFree(argv);
+        }
+        if (update_check_mode) return run_update_check_console();
+    }
+
+    // A portable self-replace parks the previous binary as <exe>.old; this is
+    // the one moment it is guaranteed deletable. Best-effort, silent.
+    glt::update::cleanup_previous_update();
+
     // 1. DPI awareness before any window exists. The manifest also declares
     //    PerMonitorV2; this explicit call is what makes it work when the
     //    manifest is stripped from the build.
@@ -646,7 +710,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int) {
 
     // 3. Frame loop.
     bool quit = false;
-    while (!quit && g_host.running) {
+    while (!quit && g_host.running && !g_app->exit_requested()) {
         MSG msg;
         while (::PeekMessageW(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
             ::TranslateMessage(&msg);

@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 #include "glt/ui/sidebar.hpp"
 
+#include "glt/core/i18n.hpp"
 #include "glt/ui/fonts.hpp"
 #include "glt/ui/theme.hpp"
 #include "glt/ui/widgets.hpp"
@@ -13,6 +14,8 @@
 
 namespace glt::ui {
 namespace {
+
+using glt::i18n::tr;
 
 ImVec4 col(theme::Rgb c) { return ImVec4(c.r, c.g, c.b, c.a); }
 
@@ -36,11 +39,12 @@ constexpr NavItem kNav[] = {
     {Page::VmPriority,  "VM & Priority",        "\uE713"}, // Settings
     {Page::Network,     "Network & Servers",    "\uE12B"}, // World
     {Page::Backups,     "Backups",              "\uE74E"}, // Save
+    {Page::BackupBundle,"Backup Bundle",        "\uE8B1"}, // Snapshot
     {Page::Logs,        "Diagnostics & Logs",   "\uE9D5"}, // Document
     {Page::About,       "About",                "\uE946"}, // Info
 };
 
-bool nav_row(App& app, const NavItem& item, bool active) {
+bool nav_row(App& app, const NavItem& item, bool active, bool badge) {
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const float h = 38.0f;
@@ -72,9 +76,16 @@ bool nav_row(App& app, const NavItem& item, bool active) {
                           active ? col(theme::kTextPrimary) : col(theme::kTextMuted));
     ImGui::TextUnformatted(item.glyph);
     ImGui::SameLine(0, 10.0f);
-    ImGui::TextUnformatted(item.label);
+    ImGui::TextUnformatted(tr(item.label));
     ImGui::PopStyleColor();
     ImGui::PopFont();
+
+    // Amber update dot: an unobtrusive "the About page has something for you"
+    // marker that survives language switching and long translated labels.
+    if (badge) {
+        dl->AddCircleFilled(ImVec2(pos.x + avail.x - 12.0f, pos.y + h * 0.5f), 4.0f,
+                            theme::u32(col(theme::kAccent)));
+    }
 
     ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + h));
     return clicked;
@@ -111,7 +122,9 @@ void draw_sidebar(App& app) {
 
     // ── Navigation ─────────────────────────────────────────────────────────
     for (const auto& item : kNav) {
-        if (nav_row(app, item, app.page() == item.page)) {
+        const bool badge = item.page == Page::About && app.update().available &&
+                           !app.update().busy;
+        if (nav_row(app, item, app.page() == item.page, badge)) {
             app.show_page(item.page);
         }
     }
@@ -142,7 +155,7 @@ void draw_sidebar(App& app) {
 
         // Line 1: GameLoop status
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextMuted));
-        ImGui::TextUnformatted("GameLoop");
+        ImGui::TextUnformatted(tr("GameLoop"));
         ImGui::PopStyleColor();
 
         ImGui::SameLine(avail_w - 95.0f);
@@ -150,19 +163,22 @@ void draw_sidebar(App& app) {
             widgets::status_dot(col(theme::kOk), 6.0f);
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kOk));
-            ImGui::Text("Running (%u)", d.procs.front().pid);
+            char running_buf[48];
+            std::snprintf(running_buf, sizeof(running_buf), tr("Running (%u)"),
+                          static_cast<unsigned>(d.procs.front().pid));
+            ImGui::TextUnformatted(running_buf);
             ImGui::PopStyleColor();
         } else {
             widgets::status_dot(col(theme::kNeutral), 6.0f);
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextDim));
-            ImGui::TextUnformatted("Not running");
+            ImGui::TextUnformatted(tr("Not running"));
             ImGui::PopStyleColor();
         }
 
         // Line 2: Registry sync
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextMuted));
-        ImGui::TextUnformatted("VM Sync");
+        ImGui::TextUnformatted(tr("VM Sync"));
         ImGui::PopStyleColor();
 
         ImGui::SameLine(avail_w - 95.0f);
@@ -172,7 +188,7 @@ void draw_sidebar(App& app) {
         if (c > 0 || m > 0) {
             std::snprintf(sync_buf, sizeof(sync_buf), "%d GB / %d C", m, c);
         } else {
-            std::snprintf(sync_buf, sizeof(sync_buf), "unset");
+            std::snprintf(sync_buf, sizeof(sync_buf), "%s", tr("unset"));
         }
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kAccent));
         ImGui::TextUnformatted(sync_buf);
@@ -195,7 +211,9 @@ void draw_sidebar(App& app) {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col(theme::kBgActive));
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextPrimary));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, theme::kCardRadius);
-        if (ImGui::Button("\xE2\x96\xB6  Launch GameLoop", ImVec2(ImGui::GetContentRegionAvail().x, 28.0f))) {
+        const std::string launch_label =
+            std::string("\xE2\x96\xB6  ") + tr("Launch GameLoop");
+        if (ImGui::Button(launch_label.c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 28.0f))) {
             app.launch_gameloop();
         }
         ImGui::PopStyleVar();
@@ -228,7 +246,8 @@ void draw_sidebar(App& app) {
         ImGui::SameLine();
         ImGui::PushFont(fonts::current().small_text);
         ImGui::PushStyleColor(ImGuiCol_Text, fg);
-        ImGui::TextUnformatted(drift_text(state));
+        const std::string drift_label = drift_text(state);
+        ImGui::TextUnformatted(drift_label.c_str());
         ImGui::PopStyleColor();
         ImGui::PopFont();
     }
@@ -239,7 +258,9 @@ void draw_sidebar(App& app) {
     {
         const int n = app.pending_count();
         if (n > 0) {
-            const std::string label = "\xE2\x9C\x93  Apply (" + std::to_string(n) + " queued)";
+            char queued_buf[48];
+            std::snprintf(queued_buf, sizeof(queued_buf), tr("Apply (%d queued)"), n);
+            const std::string label = std::string("\xE2\x9C\x93  ") + queued_buf;
 
             const bool enabled = !app.busy();
             if (widgets::action_button(label.c_str(), enabled, col(theme::kAccent))) {
@@ -252,7 +273,7 @@ void draw_sidebar(App& app) {
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col(theme::kBgActive));
             ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextMuted));
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, theme::kCardRadius);
-            if (ImGui::Button("Cancel changes", ImVec2(ImGui::GetContentRegionAvail().x, 26.0f))) {
+            if (ImGui::Button(tr("Cancel changes"), ImVec2(ImGui::GetContentRegionAvail().x, 26.0f))) {
                 app.clear_pending();
                 app.log("Pending changes cleared.", log::Level::Info);
             }
@@ -261,7 +282,7 @@ void draw_sidebar(App& app) {
         } else {
             ImGui::PushFont(fonts::current().small_text);
             ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextDim));
-            ImGui::TextUnformatted("No pending changes.");
+            ImGui::TextUnformatted(tr("No pending changes."));
             ImGui::PopStyleColor();
             ImGui::PopFont();
         }

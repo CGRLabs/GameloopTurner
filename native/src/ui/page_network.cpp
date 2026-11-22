@@ -8,6 +8,7 @@
 #include "glt/ui/pages.hpp"
 
 #include "glt/core/netinfo.hpp"
+#include "glt/core/i18n.hpp"
 #include "glt/core/paths.hpp"
 #include "glt/core/strings.hpp"
 #include "glt/ui/theme.hpp"
@@ -21,6 +22,8 @@
 
 namespace glt::ui {
 namespace {
+
+using glt::i18n::tr;
 
 ImVec4 col(theme::Rgb c) { return ImVec4(c.r, c.g, c.b, c.a); }
 
@@ -44,9 +47,9 @@ void draw_network(App& app) {
     theme::pop_transparent();
 
     widgets::page_header(
-        "Network & Servers",
-        "Capture the guest's connections, identify your game server, and act on "
-        "high-ping causes without leaving the tuner.");
+        tr("Network & Servers"),
+        tr("Capture the guest's connections, identify your game server, and act on "
+        "high-ping causes without leaving the tuner."));
 
     // ── Wi-Fi banner ────────────────────────────────────────────────────────
     if (glt::core::netinfo::is_wifi()) {
@@ -59,8 +62,10 @@ void draw_network(App& app) {
                           ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
         ImGui::PushFont(fonts::current().body);
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kWarn));
-        ImGui::TextUnformatted("\xE2\x9A\xA0 You are on Wi-Fi. Wired Ethernet gives more "
+        const std::string wifi_label =
+            std::string("\xE2\x9A\xA0 ") + tr("You are on Wi-Fi. Wired Ethernet gives more "
                                "stable latency and lower jitter.");
+        ImGui::TextUnformatted(wifi_label.c_str());
         ImGui::PopStyleColor();
         ImGui::PopFont();
         ImGui::EndChild();
@@ -71,7 +76,7 @@ void draw_network(App& app) {
 
     // ── Show raw toggle ──────────────────────────────────────────────────────
     static bool show_raw = false;
-    ImGui::Checkbox("Show raw values (IPs, ports, state codes)", &show_raw);
+    ImGui::Checkbox(tr("Show raw values (IPs, ports, state codes)"), &show_raw);
     ImGui::Dummy(ImVec2(0, 6));
 
     // ── Action row ───────────────────────────────────────────────────────────
@@ -84,7 +89,7 @@ void draw_network(App& app) {
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col(theme::kAccentHover));
     ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kOnAccent));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, theme::kCardRadius);
-    if (ImGui::Button("Refresh connections", ImVec2(btn_w, btn_h))) {
+    if (ImGui::Button(tr("Refresh connections"), ImVec2(btn_w, btn_h))) {
         app.refresh_network();
     }
     ImGui::PopStyleVar();
@@ -97,7 +102,7 @@ void draw_network(App& app) {
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col(theme::kBgActive));
     ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextPrimary));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, theme::kCardRadius);
-    if (ImGui::Button("Flush DNS", ImVec2(btn_w, btn_h))) {
+    if (ImGui::Button(tr("Flush DNS"), ImVec2(btn_w, btn_h))) {
         app.post([] {
             const std::string out = glt::core::netinfo::flush_dns();
             (void)out;
@@ -114,7 +119,7 @@ void draw_network(App& app) {
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col(theme::kBgActive));
     ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextPrimary));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, theme::kCardRadius);
-    if (ImGui::Button("Open Res. Monitor", ImVec2(btn_w, btn_h))) {
+    if (ImGui::Button(tr("Open Res. Monitor"), ImVec2(btn_w, btn_h))) {
         glt::core::netinfo::open_resource_monitor();
     }
     ImGui::PopStyleVar();
@@ -125,7 +130,7 @@ void draw_network(App& app) {
         ImGui::SameLine(0, 12.0f);
         ImGui::PushFont(fonts::current().small_text);
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextMuted));
-        ImGui::TextUnformatted("Capturing guest connections via ADB...");
+        ImGui::TextUnformatted(tr("Capturing guest connections via ADB..."));
         ImGui::PopStyleColor();
         ImGui::PopFont();
     }
@@ -133,30 +138,32 @@ void draw_network(App& app) {
     ImGui::Dummy(ImVec2(0, 8));
 
     // ── Connections table ────────────────────────────────────────────────────
-    theme::begin_card("Guest connections (captured via ADB)");
-    widgets::help_marker("Connections are read from the guest (Android) via ADB on "
+    theme::begin_card(tr("Guest connections (captured via ADB)"));
+    widgets::help_marker(tr("Connections are read from the guest (Android) via ADB on "
                          "127.0.0.1:5555. The game server is the high-port Tencent "
-                         "Cloud IP that appears only during gameplay.");
+                         "Cloud IP that appears only during gameplay."));
     const auto& net = app.network();
     if (!net.error.empty()) {
-        widgets::body_text("Capture failed: " + net.error, ImGui::GetContentRegionAvail().x,
+        char err_buf[512];
+        std::snprintf(err_buf, sizeof(err_buf), tr("Capture failed: %s"), net.error.c_str());
+        widgets::body_text(err_buf, ImGui::GetContentRegionAvail().x,
                            col(theme::kError));
     } else if (net.conns.empty()) {
         widgets::body_text(
-            "No connections captured yet. Click 'Refresh connections' while GameLoop "
-            "and CODM are running. (ADB must be able to reach 127.0.0.1:5555.)",
+            tr("No connections captured yet. Click 'Refresh connections' while GameLoop "
+            "and CODM are running. (ADB must be able to reach 127.0.0.1:5555.)"),
             ImGui::GetContentRegionAvail().x, col(theme::kTextDim));
     } else {
         if (ImGui::BeginTable("##net_table", 7,
                               ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                                   ImGuiTableFlags_SizingStretchProp)) {
-            ImGui::TableSetupColumn("Remote IP", ImGuiTableColumnFlags_WidthStretch, 0.22f);
-            ImGui::TableSetupColumn("Port", ImGuiTableColumnFlags_WidthFixed, 60.0f);
-            ImGui::TableSetupColumn("Proto", ImGuiTableColumnFlags_WidthFixed, 55.0f);
-            ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 110.0f);
-            ImGui::TableSetupColumn("Role", ImGuiTableColumnFlags_WidthStretch, 0.20f);
-            ImGui::TableSetupColumn("Ping", ImGuiTableColumnFlags_WidthFixed, 60.0f);
-            ImGui::TableSetupColumn("Reachable", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableSetupColumn(tr("Remote IP"), ImGuiTableColumnFlags_WidthStretch, 0.22f);
+            ImGui::TableSetupColumn(tr("Port"), ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableSetupColumn(tr("Proto"), ImGuiTableColumnFlags_WidthFixed, 55.0f);
+            ImGui::TableSetupColumn(tr("State"), ImGuiTableColumnFlags_WidthFixed, 110.0f);
+            ImGui::TableSetupColumn(tr("Role"), ImGuiTableColumnFlags_WidthStretch, 0.20f);
+            ImGui::TableSetupColumn(tr("Ping"), ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableSetupColumn(tr("Reachable"), ImGuiTableColumnFlags_WidthFixed, 80.0f);
 
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableHeadersRow();
@@ -178,16 +185,16 @@ void draw_network(App& app) {
                 ImGui::PopStyleColor();
                 ImGui::PopFont();
                 ImGui::TableSetColumnIndex(5);
-                if (c.ping_ms >= 0) ImGui::Text("%d ms", c.ping_ms);
+                if (c.ping_ms >= 0) ImGui::Text(tr("%d ms"), c.ping_ms);
                 else ImGui::TextUnformatted("-");
                 ImGui::TableSetColumnIndex(6);
                 if (c.reachable) {
                     ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kOk));
-                    ImGui::TextUnformatted("yes");
+                    ImGui::TextUnformatted(tr("yes"));
                     ImGui::PopStyleColor();
                 } else {
                     ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextDim));
-                    ImGui::TextUnformatted("n/a");
+                    ImGui::TextUnformatted(tr("n/a"));
                     ImGui::PopStyleColor();
                 }
             }
@@ -197,7 +204,7 @@ void draw_network(App& app) {
     theme::end_card();
 
     if (show_raw && !net.conns.empty()) {
-        theme::begin_card("Raw connection dump");
+        theme::begin_card(tr("Raw connection dump"));
         ImGui::PushFont(fonts::current().small_text);
         for (const auto& c : net.conns) {
             ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextDim));
@@ -213,37 +220,37 @@ void draw_network(App& app) {
     }
 
     // ── Game server highlight ────────────────────────────────────────────────
-    theme::begin_card("Game server");
-    widgets::help_marker("The server your current match is running on. Usually Tencent "
+    theme::begin_card(tr("Game server"));
+    widgets::help_marker(tr("The server your current match is running on. Usually Tencent "
                          "Cloud (US West Coast). High ping here is physics (distance) "
-                         "or ISP routing, not a local setting.");
+                         "or ISP routing, not a local setting."));
     const auto& conns = net.conns;
     const glt::core::netinfo::Connection* game = nullptr;
     for (const auto& c : conns) {
         if (c.role == "Game server") { game = &c; break; }
     }
     if (game) {
-        widgets::kv_row("Remote IP", game->remote_ip);
+        widgets::kv_row(tr("Remote IP"), game->remote_ip);
         char buf[64];
         std::snprintf(buf, sizeof(buf), "%d", game->remote_port);
-        widgets::kv_row("Port", buf);
-        widgets::kv_row("Protocol", game->proto);
-        widgets::kv_row("State", game->state);
+        widgets::kv_row(tr("Port"), buf);
+        widgets::kv_row(tr("Protocol"), game->proto);
+        widgets::kv_row(tr("State"), game->state);
         if (game->ping_ms >= 0) {
-            std::snprintf(buf, sizeof(buf), "%d ms", game->ping_ms);
-            widgets::kv_row("Ping", buf);
+            std::snprintf(buf, sizeof(buf), tr("%d ms"), game->ping_ms);
+            widgets::kv_row(tr("Ping"), buf);
         } else {
-            widgets::kv_row("Ping", "not measured");
+            widgets::kv_row(tr("Ping"), tr("not measured"));
         }
         widgets::body_text(
-            "This is the server your current match is running on. It is a Tencent Cloud "
+            tr("This is the server your current match is running on. It is a Tencent Cloud "
             "PoP (Santa Clara, CA for most regions). High ping here is usually physics "
-            "(distance) or ISP routing, not a local setting.",
+            "(distance) or ISP routing, not a local setting."),
             ImGui::GetContentRegionAvail().x, col(theme::kTextDim));
     } else {
         widgets::body_text(
-            "No game server detected. Start a match in CODM, then click "
-            "'Refresh connections'.",
+            tr("No game server detected. Start a match in CODM, then click "
+            "'Refresh connections'."),
             ImGui::GetContentRegionAvail().x, col(theme::kTextDim));
     }
     theme::end_card();
@@ -251,11 +258,11 @@ void draw_network(App& app) {
     ImGui::Dummy(ImVec2(0, 8));
 
     // ── DNS override (guest) ─────────────────────────────────────────────────
-    theme::begin_card("Guest DNS override (androws.conf)");
-    widgets::help_marker("The DNS resolver the emulator uses. 114.114.114.114 is "
+    theme::begin_card(tr("Guest DNS override (androws.conf)"));
+    widgets::help_marker(tr("The DNS resolver the emulator uses. 114.114.114.114 is "
                          "unreachable from Algeria (100% packet loss). Change to "
                          "1.1.1.1 / 8.8.8.8 for faster resolution. GameLoop must "
-                         "be restarted for the guest to pick up the new DNS.");
+                         "be restarted for the guest to pick up the new DNS."));
     {
         static char dns1[64] = "1.1.1.1";
         static char dns2[64] = "8.8.8.8";
@@ -277,27 +284,27 @@ void draw_network(App& app) {
 
         ImGui::PushFont(fonts::current().small_text);
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextMuted));
-        ImGui::TextUnformatted("Current guest resolvers (read from androws.conf):");
+        ImGui::TextUnformatted(tr("Current guest resolvers (read from androws.conf):"));
         ImGui::PopStyleColor();
         ImGui::PopFont();
 
         char cur1[64], cur2[64];
         std::snprintf(cur1, sizeof(cur1), "%s", cached1.empty() ? "?" : cached1.c_str());
         std::snprintf(cur2, sizeof(cur2), "%s", cached2.empty() ? "?" : cached2.c_str());
-        widgets::kv_row("DNS 1", cur1);
-        widgets::kv_row("DNS 2", cur2);
+        widgets::kv_row(tr("DNS 1"), cur1);
+        widgets::kv_row(tr("DNS 2"), cur2);
 
         ImGui::Dummy(ImVec2(0, 4));
         ImGui::SetNextItemWidth(160.0f);
-        ImGui::InputText("Primary", dns1, sizeof(dns1));
+        ImGui::InputText(tr("Primary"), dns1, sizeof(dns1));
         ImGui::SetNextItemWidth(160.0f);
-        ImGui::InputText("Secondary", dns2, sizeof(dns2));
+        ImGui::InputText(tr("Secondary"), dns2, sizeof(dns2));
 
         ImGui::Dummy(ImVec2(0, 4));
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextDim));
         ImGui::PushFont(fonts::current().small_text);
-        ImGui::TextUnformatted("Applies to androws.conf (backed up first). "
-                              "GameLoop must be restarted for the guest to pick up the new DNS.");
+        ImGui::TextUnformatted(tr("Applies to androws.conf (backed up first). "
+                              "GameLoop must be restarted for the guest to pick up the new DNS."));
         ImGui::PopFont();
         ImGui::PopStyleColor();
 
@@ -307,17 +314,17 @@ void draw_network(App& app) {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col(theme::kAccentHover));
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kOnAccent));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, theme::kCardRadius);
-        if (ImGui::Button("Apply DNS", ImVec2(120.0f, 26.0f))) {
+        if (ImGui::Button(tr("Apply DNS"), ImVec2(120.0f, 26.0f))) {
             std::string a(dns1), b(dns2);
             app.post([&app, a, b] {
                 try {
                     auto notes = glt::core::netinfo::set_guest_dns(a, b);
                     for (const auto& n : notes) app.log(n, log::Level::Info);
                     app.log("Guest DNS updated. Restart GameLoop.", log::Level::Success);
-                    app.toast("Guest DNS updated", log::Level::Success);
+                    app.toast(tr("Guest DNS updated"), log::Level::Success);
                 } catch (const std::exception& e) {
                     app.log(std::string("DNS update failed: ") + e.what(), log::Level::Error);
-                    app.toast("DNS update failed", log::Level::Error);
+                    app.toast(tr("DNS update failed"), log::Level::Error);
                 }
             });
         }
@@ -331,7 +338,7 @@ void draw_network(App& app) {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col(theme::kBgActive));
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextPrimary));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, theme::kCardRadius);
-        if (ImGui::Button("Reset to 114/119", ImVec2(140.0f, 26.0f))) {
+        if (ImGui::Button(tr("Reset to 114/119"), ImVec2(140.0f, 26.0f))) {
             std::snprintf(dns1, sizeof(dns1), "%s", "114.114.114.114");
             std::snprintf(dns2, sizeof(dns2), "%s", "119.29.29.29");
         }
@@ -344,10 +351,10 @@ void draw_network(App& app) {
     ImGui::Dummy(ImVec2(0, 8));
 
     // ── Live ping (non-blocking, measured during Refresh) ────────────────────
-    theme::begin_card("Live ping (1.1.1.1)");
-    widgets::help_marker("Ping is measured in the background during 'Refresh "
+    theme::begin_card(tr("Live ping (1.1.1.1)"));
+    widgets::help_marker(tr("Ping is measured in the background during 'Refresh "
                          "connections' (no UI freeze). For continuous real-time "
-                         "monitoring use Monitor-Jitter.ps1 -Target <ip>.");
+                         "monitoring use Monitor-Jitter.ps1 -Target <ip>."));
     {
         const auto& n = app.network();
         // Show the game server ping if available.
@@ -356,9 +363,9 @@ void draw_network(App& app) {
             if (c.role == "Game server" && c.ping_ms >= 0) { game_ping = c.ping_ms; break; }
         }
         char buf[64];
-        if (game_ping >= 0) std::snprintf(buf, sizeof(buf), "Game server: %d ms", game_ping);
-        else std::snprintf(buf, sizeof(buf), "Game server: not measured");
-        widgets::kv_row("Ping", buf);
+        if (game_ping >= 0) std::snprintf(buf, sizeof(buf), tr("Game server: %d ms"), game_ping);
+        else std::snprintf(buf, sizeof(buf), "%s", tr("Game server: not measured"));
+        widgets::kv_row(tr("Ping"), buf);
 
         // Show unique remote IPs with their ping.
         std::vector<std::string> seen;
@@ -370,21 +377,21 @@ void draw_network(App& app) {
             if (dup) continue;
             seen.push_back(c.remote_ip);
             char pbuf[64];
-            if (c.ping_ms >= 0) std::snprintf(pbuf, sizeof(pbuf), "%d ms", c.ping_ms);
-            else std::snprintf(pbuf, sizeof(pbuf), "unreachable");
+            if (c.ping_ms >= 0) std::snprintf(pbuf, sizeof(pbuf), tr("%d ms"), c.ping_ms);
+            else std::snprintf(pbuf, sizeof(pbuf), "%s", tr("unreachable"));
             widgets::kv_row(c.remote_ip.c_str(), pbuf);
         }
 
         if (n.conns.empty()) {
-            widgets::body_text("Click 'Refresh connections' to measure ping to each "
-                               "endpoint (runs in background, no UI freeze).",
+            widgets::body_text(tr("Click 'Refresh connections' to measure ping to each "
+                               "endpoint (runs in background, no UI freeze)."),
                                ImGui::GetContentRegionAvail().x, col(theme::kTextDim));
         }
 
         ImGui::PushFont(fonts::current().small_text);
         ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextDim));
-        ImGui::TextUnformatted("For continuous real-time monitoring, use "
-                               "Monitor-Jitter.ps1 -Target <game server IP>.");
+        ImGui::TextUnformatted(tr("For continuous real-time monitoring, use "
+                               "Monitor-Jitter.ps1 -Target <game server IP>."));
         ImGui::PopStyleColor();
         ImGui::PopFont();
     }
@@ -393,12 +400,12 @@ void draw_network(App& app) {
     ImGui::Dummy(ImVec2(0, 8));
 
     // ── High-ping help ───────────────────────────────────────────────────────
-    theme::begin_card("High-ping help (read-only guidance)");
-    widgets::help_marker("Most high-ping causes are NOT fixable by a setting. Work "
+    theme::begin_card(tr("High-ping help (read-only guidance)"));
+    widgets::help_marker(tr("Most high-ping causes are NOT fixable by a setting. Work "
                          "through these in order. See docs/10-testing-plan.md for "
-                         "the full test matrix.");
+                         "the full test matrix."));
     widgets::body_text(
-        "Most high-ping causes are NOT fixable by a setting. Work through these in order:",
+        tr("Most high-ping causes are NOT fixable by a setting. Work through these in order:"),
         ImGui::GetContentRegionAvail().x, col(theme::kTextPrimary));
     ImGui::Dummy(ImVec2(0, 4));
 
@@ -422,15 +429,15 @@ void draw_network(App& app) {
             "you. Only telemetry endpoints are safe to block.",
     };
     for (const char* t : tips) {
-        widgets::body_text(t, ImGui::GetContentRegionAvail().x, col(theme::kTextMuted));
+        widgets::body_text(tr(t), ImGui::GetContentRegionAvail().x, col(theme::kTextMuted));
         ImGui::Dummy(ImVec2(0, 2));
     }
 
     ImGui::Dummy(ImVec2(0, 6));
     ImGui::PushFont(fonts::current().small_text);
     ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kTextDim));
-    ImGui::TextUnformatted("Tools: Resource Monitor (resmon) shows per-process network. "
-                           "PingPlotter graphs jitter/loss over time.");
+    ImGui::TextUnformatted(tr("Tools: Resource Monitor (resmon) shows per-process network. "
+                           "PingPlotter graphs jitter/loss over time."));
     ImGui::PopStyleColor();
     ImGui::PopFont();
     theme::end_card();

@@ -181,11 +181,16 @@ jobs:
             "{0}: {1:N0} bytes ({2:N2} MB)" -f $name, $exe.Length, ($exe.Length / 1MB) | Write-Host
 
             # Measured on MSVC 19.51 / SQLite 3.50.4 / imgui 1.91.9b:
-            #   .text  ~1.39 MB   of which sqlite3.c is ~622 KB and imgui ~249 KB
-            #   .rdata ~487 KB
-            # 2 MB is the regression line, not the target.
-            if ($exe.Length -gt 2MB) {
-              throw "$name is $($exe.Length / 1MB) MB, over the 2 MB regression line"
+            #   .text  ~1.42 MB   of which sqlite3.c is ~622 KB and imgui ~249 KB
+            #   .rdata ~540 KB
+            # 2.2 MB is the regression line, not the target. It was 2.0 MB until
+            # the self-updater (WinHTTP + BCrypt + release selection) and the
+            # embedded localisation tables (7 languages) shipped in the same
+            # release; both are deliberate scope, so the alarm is recalibrated
+            # rather than defeated. If this climbs past 2.2 MB, something is
+            # still bloating the binary and the line exists to say so.
+            if ($exe.Length -gt 2200KB) {
+              throw "$name is $($exe.Length / 1MB) MB, over the 2.2 MB regression line"
             }
           }
 

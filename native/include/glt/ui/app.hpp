@@ -25,14 +25,18 @@
 #include <vector>
 
 #include "glt/core/backups.hpp"
+#include "glt/core/bundle.hpp"
 #include "glt/core/netinfo.hpp"
 #include "glt/core/disk.hpp"
 #include "glt/core/drift.hpp"
 #include "glt/core/fixes.hpp"
+#include "glt/core/i18n.hpp"
 #include "glt/core/keymaps.hpp"
 #include "glt/core/log.hpp"
+#include "glt/core/preflight.hpp"
 #include "glt/core/procs.hpp"
 #include "glt/core/registry.hpp"
+#include "glt/core/update.hpp"
 #include "glt/core/variant.hpp"
 
 namespace glt::ui {
@@ -46,6 +50,7 @@ enum class Page {
     VmPriority,
     Network,
     Backups,
+    BackupBundle,
     Logs,
     About,
 };
@@ -60,7 +65,7 @@ enum class DriftState {
     Drifted,    // amber — GameLoop reverted something
 };
 
-[[nodiscard]] const char* drift_text(DriftState s);
+[[nodiscard]] std::string drift_text(DriftState s);
 [[nodiscard]] bool drift_is_warn(DriftState s);
 
 // ── Log console model ────────────────────────────────────────────────────────
@@ -100,6 +105,13 @@ public:
     void open_variant_picker();
     // Forgets the persisted choice and re-opens the picker.
     void clear_variant_choice();
+
+    // ── Language (i18n) ──────────────────────────────────────────────────
+    [[nodiscard]] std::string_view language() const { return language_; }
+    [[nodiscard]] bool language_is_automatic() const { return language_auto_; }
+    // "" or "auto" switches back to follow the Windows UI language; a concrete
+    // code pins that language. Unknown codes are logged and ignored.
+    void choose_language(std::string_view code);
 
     // ── Thread-safe UI queue ───────────────────────────────────────────────
     // Callable from any thread. Runs on the render thread during drain().
@@ -147,6 +159,37 @@ public:
     void launch_gameloop();
     void revert_all();
     void export_report();
+
+    // ── Self-update (GitHub Releases) ────────────────────────────────────
+    // check_update runs on a worker; results arrive through post(). A manual
+    // check reports failures loudly, the automatic startup check logs them at
+    // Info because offline is a normal state.
+    struct UpdateState {
+        bool checked = false;        // a completed check exists
+        bool available = false;      // a newer release is published
+        bool busy = false;           // check or download running
+        bool downloaded_ok = false;  // asset on disk, digest verified
+        glt::update::Kind kind = glt::update::Kind::None;
+        std::string error;           // last failure, shown on the About card
+        std::string tag;             // "v2.1.0"
+        std::string page_url;        // release page
+        std::string asset_url;
+        std::string notes;
+        std::string sha256;
+        std::uint64_t size = 0;
+        std::uint64_t downloaded = 0;
+        std::wstring setup_path;
+    };
+    void check_update(bool manual);
+    // Downloads (if needed) and, after a confirm prompt, launches the setup
+    // and requests app exit.
+    void install_update();
+    [[nodiscard]] const UpdateState& update() const { return update_; }
+
+    // Set by install_update after the installer is launched; the frame loop
+    // checks it so teardown runs through the normal shutdown path.
+    void request_exit() { exit_requested_.store(true); }
+    [[nodiscard]] bool exit_requested() const { return exit_requested_.load(); }
 
     // ── Toast notifications ────────────────────────────────────────────────
     struct Toast {
@@ -201,6 +244,9 @@ public:
         std::wstring db_path;
         std::wstring build_dir;
         std::string db_error;
+        // Install-shape verdict from glt/core/preflight (nullopt when the DB is
+        // missing entirely — the Dashboard already says why).
+        std::optional<preflight::Report> preflight;
         // keymap
         std::optional<std::string> lastmodeid;
         std::optional<std::string> mode145_solution;
@@ -222,6 +268,30 @@ public:
     void refresh_backups();
     [[nodiscard]] const std::vector<backups::BackupEntry>& backups() const { return backups_; }
     void restore_backup(std::size_t index);
+
+    // ── Backup Bundle (.gltbak) ────────────────────────────────────────────
+    // Captures the whole GameLoop/CODM install and writes a .gltbak file to
+    // `save_path` (user-chosen via file picker). Runs off the render thread.
+    void create_bundle(std::wstring save_path, std::string title);
+
+    // Reads a .gltbak file into memory for preview. Returns true on success.
+    bool open_bundle(std::wstring path);
+
+    // Applies the currently opened bundle to the live system (or dry-run).
+    void apply_bundle(bool dry_run = false);
+
+    // Clears the in-memory bundle and its diffs.
+    void clear_bundle();
+
+    // ── Per-section apply toggles ────────────────────────────────────────────
+    [[nodiscard]] const bundle::ApplyOptions& bundle_options() const { return bundle_options_; }
+    void set_apply_configs_db(bool v) { bundle_options_.configs_db = v; }
+    void set_apply_smk_conf(bool v) { bundle_options_.smk_conf = v; }
+    void set_apply_registry(bool v) { bundle_options_.registry = v; }
+
+    [[nodiscard]] const std::optional<bundle::Bundle>& current_bundle() const { return bundle_; }
+    [[nodiscard]] const std::vector<bundle::FieldDiff>& bundle_diffs() const { return bundle_diffs_; }
+    [[nodiscard]] bool bundle_loaded() const { return bundle_.has_value(); }
 
     // ── Modal ──────────────────────────────────────────────────────────────
     // A confirmation a worker needs an answer to before it can continue.
@@ -273,10 +343,25 @@ private:
     bool variant_chosen_ = false;
     bool variant_picker_open_ = false;
 
+    // Active UI language (glt/core/i18n.hpp). language_auto_ distinguishes "the
+    // user pinned this language" from "it follows Windows" — the About card
+    // needs exactly that to highlight the right chip.
+    std::string language_ = "en";
+    bool language_auto_ = true;
+
+    UpdateState update_;
+    std::atomic<bool> exit_requested_{false};
+
     procs::HostResources host_;
     Dashboard dash_;
     NetworkInfo network_;
     std::vector<backups::BackupEntry> backups_;
+
+    // Backup Bundle state (in-memory .gltbak being previewed).
+    std::optional<bundle::Bundle> bundle_;
+    std::vector<bundle::FieldDiff> bundle_diffs_;
+    std::wstring bundle_path_;
+    bundle::ApplyOptions bundle_options_;
 
     // Prompt plumbing. prompt_ and prompt_action_ are written under
     // prompt_mutex_ and read on the render thread.

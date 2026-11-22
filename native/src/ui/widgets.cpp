@@ -1,5 +1,6 @@
 #include "glt/ui/widgets.hpp"
 
+#include "glt/core/i18n.hpp"
 #include "glt/ui/app.hpp"
 
 #include <algorithm>
@@ -113,7 +114,8 @@ void fix_checkbox(bool* value, std::string_view label, std::string_view why) {
 void fix_hero_checkbox(bool* value, std::string_view label, std::string_view why) {
     ImGui::PushFont(fonts::current().small_text);
     ImGui::PushStyleColor(ImGuiCol_Text, col(theme::kAccent));
-    ImGui::TextUnformatted("\xE2\x98\x85  RECOMMENDED"); // ★  RECOMMENDED
+    const std::string hero_badge = std::string("\xE2\x98\x85  ") + i18n::tr("RECOMMENDED");
+    ImGui::TextUnformatted(hero_badge.c_str()); // ★  RECOMMENDED
     ImGui::PopStyleColor();
     ImGui::PopFont();
 

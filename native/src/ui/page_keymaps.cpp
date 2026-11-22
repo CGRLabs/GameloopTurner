@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 #include "glt/ui/pages.hpp"
 
+#include "glt/core/i18n.hpp"
 #include "glt/core/strings.hpp"
 #include "glt/ui/fonts.hpp"
 #include "glt/ui/theme.hpp"
@@ -17,6 +18,8 @@
 
 namespace glt::ui {
 namespace {
+
+using glt::i18n::tr;
 
 ImVec4 col(theme::Rgb c) { return ImVec4(c.r, c.g, c.b, c.a); }
 
@@ -27,17 +30,20 @@ bool g_advanced_open = false;
 
 void fix_row(App& app, const fixes::Def& def, bool hero) {
     bool on = app.is_pending(def.key);
-    const char* badge = hero ? "\xE2\x98\x85 RECOMMENDED" : nullptr;
+    const std::string badge =
+        hero ? (std::string("\xE2\x98\x85 ") + tr("RECOMMENDED")) : std::string();
     const char* icon = hero ? "\uE8EC" : "\uE713";
 
-    std::string desc = std::string(def.why);
+    std::string desc = std::string(tr(def.why.data()));
     if (!def.risk.empty()) {
-        desc += "\n\nRisk: ";
-        desc += def.risk;
+        desc += "\n\n";
+        desc += tr("Risk: ");
+        desc += tr(def.risk.data());
     }
 
     if (widgets::setting_row(std::to_string(static_cast<int>(def.key)).c_str(),
-                             icon, def.label, desc, &on, badge)) {
+                             icon, tr(def.label.data()), desc, &on,
+                             badge.empty() ? nullptr : badge.c_str())) {
         app.toggle_pending(def.key, on);
     }
 }
@@ -52,8 +58,8 @@ void draw_keymaps(App& app) {
     theme::pop_transparent();
 
     widgets::page_header(
-        "Keymaps & Anti-Shake",
-        "Prevent emulator layout auto-switching and mouse jitter during gunfights.");
+        tr("Keymaps & Anti-Shake"),
+        tr("Prevent emulator layout auto-switching and mouse jitter during gunfights."));
 
     const auto defs = fixes::for_page(fixes::Page::Keymaps);
 
@@ -66,7 +72,7 @@ void draw_keymaps(App& app) {
     }
 
     // The rest, behind an expander.
-    if (widgets::collapsible("Advanced Keymap Options", &g_advanced_open)) {
+    if (widgets::collapsible(tr("Advanced Keymap Options"), &g_advanced_open)) {
         for (const auto& def : defs) {
             if (def.star) continue;
             fix_row(app, def, false);

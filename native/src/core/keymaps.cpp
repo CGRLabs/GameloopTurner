@@ -387,6 +387,38 @@ for (const std::string_view want : ladder) {
 return *flats.front();
 }
 
+// Mode-restricted flat-layout picker. Restricts the search to the requested
+// mode first, so a 0-rule BR solution can never be selected when pinning
+// multiplayer. Falls back to any flat layout only when the requested mode has
+// none (needed for DMZ/BR flattening on a machine whose 145 has no flat).
+std::optional<Solution> pick_flat_for_mode(const std::vector<Solution>& rows,
+                                           std::string_view mode,
+                                           std::string_view prefer) {
+    // Step 1 — 0-rule layouts inside the requested mode only.
+    std::vector<const Solution*> flats;
+    for (const auto& r : rows) {
+        if (r.mode == mode && r.rule_count == 0) flats.push_back(&r);
+    }
+
+    // Step 2 — fall back to any flat layout only when the mode has none.
+    if (flats.empty()) {
+        for (const auto& r : rows) {
+            if (r.rule_count == 0) flats.push_back(&r);
+        }
+    }
+    if (flats.empty()) return std::nullopt;
+
+    // Preference ladder over the solution NAME, case-insensitively.
+    const std::string_view ladder[] = {prefer, "multi", "br"};
+    for (const std::string_view want : ladder) {
+        if (want.empty()) continue;
+        for (const auto* f : flats) {
+            if (str::icontains(f->name, want)) return *f;
+        }
+    }
+    return *flats.front();
+}
+
 std::vector<std::string> jump_tags(const db::Connection& con, std::string_view pkg) {
     std::vector<std::string> out;
     for (const auto& tag : jump_tags_detail(con, pkg)) {

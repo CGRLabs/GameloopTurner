@@ -63,6 +63,10 @@ inline constexpr int kScaleStep = 25;
 // rather than glyph-picked, because ImGui rasterises in whole ranges:
 //
 //   0x0020-0x00FF  basic latin          — every label, number and separator
+//   0x0100-0x024F  latin extended A/B   — tr İ/ı, pt ã/õ, id — (i18n)
+//   0x0400-0x04FF  cyrillic             — Russian (i18n)
+//   0x0600-0x06FF  arabic               — العربية (i18n)
+//   0x1E00-0x1EFF  latin ext. additional— Vietnamese diacritics (i18n)
 //   0x2000-0x206F  general punctuation
 //   0x2100-0x214F  letterlike           — ℹ (sidebar: About)
 //   0x2190-0x21FF  arrows               — ⇄ (drift)
@@ -80,12 +84,22 @@ inline constexpr int kScaleStep = 25;
 // Deliberately NOT ImGui's own CJK ranges: pulling a CJK atlas in would add
 // tens of megabytes of texture for text this app never renders.
 //
+// The i18n blocks (0100–1EFF) are always present regardless of the active
+// language so switching is instant and needs no atlas rebuild. Segoe UI and
+// Tahoma cover all of them. Consolas (the mono faces) does NOT cover Arabic —
+// acceptable, because the mono faces only render logs, paths and IDs, which
+// are English by design (see i18n.hpp).
+//
 // Declared as an explicit ImWchar array rather than a string literal: ImWchar
 // is `unsigned short`, a different type from `wchar_t` even on MSVC, so an
 // L"..." literal needs a cast; and a narrow "\x2000" is a different value
 // entirely, which /W4 rejects outright as "escape sequence out of range".
 inline constexpr ImWchar kGlyphRanges[] = {
     0x0020, 0x00FF,  // Basic Latin + Latin Supplement  ← do not remove
+    0x0100, 0x024F,  // Latin Extended-A/B — Turkish, Portuguese, Indonesian
+    0x0400, 0x04FF,  // Cyrillic — Russian
+    0x0600, 0x06FF,  // Arabic
+    0x1E00, 0x1EFF,  // Latin Extended Additional — Vietnamese
     0x2000, 0x206F,  // General Punctuation
     0x2100, 0x214F,  // Letterlike Symbols
     0x2190, 0x21FF,  // Arrows

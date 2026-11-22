@@ -133,6 +133,15 @@ struct ModeInfo {
 [[nodiscard]] std::optional<Solution> pick_flat(const std::vector<Solution>& rows,
                                                 std::string_view prefer = "mp");
 
+// Picks a 0-rule layout FOR A SPECIFIC MODE. Restricts the search to the
+// requested mode first, so a 0-rule BR solution can never be selected when
+// pinning multiplayer. Falls back to any flat layout only when the requested
+// mode has none (needed for DMZ/BR flattening on a machine whose 145 has no
+// flat). Required when GameLoop ships Hub-style keymapping on a Beta install.
+[[nodiscard]] std::optional<Solution> pick_flat_for_mode(const std::vector<Solution>& rows,
+                                                         std::string_view mode,
+                                                         std::string_view prefer = "mp");
+
 // ── Jump-table introspection ─────────────────────────────────────────────────
 
 // ModeIDs referenced by <Switch … ModeID="N"> in offcial_config2.<pkg>.

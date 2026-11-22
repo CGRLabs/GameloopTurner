@@ -11,6 +11,7 @@
 #include "glt/ui/pages.hpp"
 
 #include "glt/core/procs.hpp"
+#include "glt/core/i18n.hpp"
 #include "glt/core/strings.hpp"
 #include "glt/ui/theme.hpp"
 #include "glt/ui/widgets.hpp"
@@ -18,10 +19,12 @@
 namespace glt::ui {
 namespace {
 
+using glt::i18n::tr;
+
 void fix_row(App& app, const fixes::Def& def) {
     bool on = app.is_pending(def.key);
     ImGui::PushID(static_cast<int>(def.key));
-    widgets::fix_checkbox(&on, def.label, def.why);
+    widgets::fix_checkbox(&on, tr(def.label.data()), tr(def.why.data()));
     if (on != app.is_pending(def.key)) app.toggle_pending(def.key, on);
     ImGui::PopID();
 }
@@ -36,16 +39,20 @@ void draw_vm_priority(App& app) {
     theme::pop_transparent();
 
     widgets::page_header(
-        "VM & Priority",
-        "Priorities apply to RUNNING processes - launch the game first, then Apply All. "
-        "They reset when GameLoop exits.");
+        tr("VM & Priority"),
+        tr("Priorities apply to RUNNING processes - launch the game first, then Apply All. "
+           "They reset when GameLoop exits."));
 
     for (const auto& def : fixes::for_page(fixes::Page::VmPriority)) {
         bool on = app.is_pending(def.key);
-        std::string desc = std::string(def.why);
-        if (!def.risk.empty()) { desc += "\n\nRisk: "; desc += def.risk; }
+        std::string desc = std::string(tr(def.why.data()));
+        if (!def.risk.empty()) {
+            desc += "\n\n";
+            desc += tr("Risk: ");
+            desc += tr(def.risk.data());
+        }
         if (widgets::setting_row(std::to_string(static_cast<int>(def.key)).c_str(),
-                                 "\xE2\x9A\x99", def.label, desc, &on, "REAL-TIME")) {
+                                 "\xE2\x9A\x99", tr(def.label.data()), desc, &on, tr("REAL-TIME"))) {
             app.toggle_pending(def.key, on);
         }
         ImGui::Dummy(ImVec2(0, 4));
@@ -54,15 +61,15 @@ void draw_vm_priority(App& app) {
     // Live process table, so the user can see whether the target is even
     // running before ticking the box.
     ImGui::Dummy(ImVec2(0, 10));
-    theme::begin_card("Running GameLoop processes");
-    widgets::help_marker("Live list of running GameLoop processes with PID and "
+    theme::begin_card(tr("Running GameLoop processes"));
+    widgets::help_marker(tr("Live list of running GameLoop processes with PID and "
                          "memory. Use this to confirm the game is running before "
-                         "applying priorities.");
+                         "applying priorities."));
 
     const auto& procs = app.dashboard().procs;
     if (procs.empty()) {
-        widgets::body_text("Nothing running. Start GameLoop, then re-diagnose from the "
-                           "Dashboard and tick the fix above.",
+        widgets::body_text(tr("Nothing running. Start GameLoop, then re-diagnose from the "
+                           "Dashboard and tick the fix above."),
                            ImGui::GetContentRegionAvail().x,
                            ImVec4(theme::kTextDim.r, theme::kTextDim.g, theme::kTextDim.b, 1.0f));
     } else {
@@ -70,9 +77,9 @@ void draw_vm_priority(App& app) {
         if (ImGui::BeginTable("##proc_table", 3,
                               ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                                   ImGuiTableFlags_SizingStretchProp)) {
-            ImGui::TableSetupColumn("Process", ImGuiTableColumnFlags_WidthStretch, 0.45f);
+            ImGui::TableSetupColumn(tr("Process"), ImGuiTableColumnFlags_WidthStretch, 0.45f);
             ImGui::TableSetupColumn("PID", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-            ImGui::TableSetupColumn("Memory", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn(tr("Memory"), ImGuiTableColumnFlags_WidthFixed, 100.0f);
 
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableHeadersRow();

@@ -38,6 +38,9 @@ inline constexpr std::string_view kPkg = "com.activision.callofduty.shooter";
 // Directory holding Configs.db (used for backups + the journal file).
 [[nodiscard]] std::wstring db_dir();
 
+// %TEMP% directory, or "" when unavailable.
+[[nodiscard]] std::wstring temp_dir();
+
 // Root of the GameLoop installation, or "" when not found.
 [[nodiscard]] std::wstring install_root();
 

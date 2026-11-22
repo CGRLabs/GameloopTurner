@@ -40,12 +40,6 @@ inline constexpr std::string_view kHubConfigsColumns = "key, value";
 // accounted for without being hardcoded into the pinning decision.
 inline constexpr std::string_view kHubFlatBrSolution = "1792331375184";
 
-// Pins a 0-rule layout FOR A SPECIFIC MODE. Preference order within the mode is
-// `prefer` → 'multi' → 'br', then the first flat found. Only when the requested
-// mode has no flat layout at all does it fall back to the generic set, which is
-// what keeps DMZ/BR flattening working on a machine whose 145 has no flat.
-[[nodiscard]] std::optional<Solution> pick_flat_for_mode(const std::vector<Solution>& rows,
-                                                         std::string_view mode,
-                                                         std::string_view prefer = "mp");
-
+// pick_flat_for_mode() is declared in keymaps.hpp (which this header includes)
+// and implemented in keymaps.cpp. The Hub build does not re-declare it.
 } // namespace glt::keymaps

@@ -109,6 +109,13 @@ std::wstring db_dir() {
     return db.empty() ? std::wstring{} : str::path_parent(db);
 }
 
+std::wstring temp_dir() {
+    wchar_t buf[MAX_PATH]{};
+    const DWORD n = ::GetTempPathW(MAX_PATH, buf);
+    if (n == 0 || n > MAX_PATH) return {};
+    return std::wstring(buf);
+}
+
 std::wstring smk_conf() {
     const std::wstring base = roaming_appdata();
     if (base.empty()) return {};

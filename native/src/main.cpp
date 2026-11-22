@@ -34,12 +34,17 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <iostream>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
 #include "imgui.h"
 
 #include "glt/core/log.hpp"
+#include "glt/core/paths.hpp"
 #include "glt/core/report.hpp"
 #include "glt/core/strings.hpp"
 #include "glt/core/update.hpp"
@@ -609,6 +614,183 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int) {
             ::LocalFree(argv);
         }
         if (update_check_mode) return run_update_check_console();
+    }
+
+    // ── CLI (headless) mode ────────────────────────────────────────────────
+    // Any agent or script can drive the tuner without a window:
+    //   --help                              show this help
+    //   --version                           print version
+    //   --list-backups                      list existing backups
+    //   --create-bundle <path> [--title <t>]  capture all settings to .gltbak
+    //   --open-bundle <path>                load and preview a .gltbak
+    //   --apply-bundle <path> [--dry-run]
+    //       [--no-configs] [--no-smk] [--no-registry]
+    {
+        int argc = 0;
+        LPWSTR* const argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+        if (argv) {
+            std::vector<std::wstring> args;
+            args.reserve(static_cast<size_t>(argc) - 1);
+            for (int i = 1; i < argc; ++i) args.emplace_back(argv[i]);
+            ::LocalFree(argv);
+
+            bool cli_mode = false;
+            std::wstring cmd;
+            std::wstring bundle_path;
+            std::string title;
+            bool dry_run = false;
+            bool apply_configs = true;
+            bool apply_smk = true;
+            bool apply_registry = true;
+
+            for (size_t i = 0; i < args.size(); ++i) {
+                std::wstring_view a = args[i];
+                if (a == L"--help" || a == L"-h" || a == L"/?") {
+                    cli_mode = true;
+                    cmd = L"help";
+                } else if (a == L"--version") {
+                    cli_mode = true;
+                    cmd = L"version";
+                } else if (a == L"--list-backups") {
+                    cli_mode = true;
+                    cmd = L"list-backups";
+                } else if (a == L"--create-bundle") {
+                    cli_mode = true;
+                    cmd = L"create-bundle";
+                    if (i + 1 < args.size()) bundle_path = args[++i];
+                } else if (a == L"--title") {
+                    if (i + 1 < args.size()) title = glt::str::to_utf8(args[++i]);
+                } else if (a == L"--open-bundle") {
+                    cli_mode = true;
+                    cmd = L"open-bundle";
+                    if (i + 1 < args.size()) bundle_path = args[++i];
+                } else if (a == L"--apply-bundle") {
+                    cli_mode = true;
+                    cmd = L"apply-bundle";
+                    if (i + 1 < args.size()) bundle_path = args[++i];
+                } else if (a == L"--dry-run") {
+                    dry_run = true;
+                } else if (a == L"--no-configs") {
+                    apply_configs = false;
+                } else if (a == L"--no-smk") {
+                    apply_smk = false;
+                } else if (a == L"--no-registry") {
+                    apply_registry = false;
+                }
+            }
+
+            if (cli_mode) {
+                // The manifest requests elevation, so an elevated child cannot
+                // inherit the parent's console across integrity levels.
+                // Try attaching to the parent console first; if that fails,
+                // allocate our own. Output goes to both the console and a
+                // temp file so agents/scripts can capture it either way.
+                if (!::AttachConsole(ATTACH_PARENT_PROCESS)) {
+                    ::AllocConsole();
+                }
+                auto hout = ::GetStdHandle(STD_OUTPUT_HANDLE);
+                auto herr = ::GetStdHandle(STD_ERROR_HANDLE);
+                auto wout = [hout](const std::string& s) {
+                    DWORD written;
+                    ::WriteFile(hout, s.data(), static_cast<DWORD>(s.size()), &written, nullptr);
+                };
+                auto werr = [herr](const std::string& s) {
+                    DWORD written;
+                    ::WriteFile(herr, s.data(), static_cast<DWORD>(s.size()), &written, nullptr);
+                };
+                auto tee = [&](const std::string& s) {
+                    wout(s);
+                    // Echo to a temp file so agents/scripts can capture output
+                    // reliably regardless of console/redirection quirks.
+                    std::wstring tf = glt::paths::temp_dir() + L"gameloop-tuner";
+                    if (::CreateDirectoryW(tf.c_str(), nullptr) || ::GetLastError() == ERROR_ALREADY_EXISTS) {
+                        tf += L"\\cli-output.txt";
+                        FILE* f;
+                        if (::fopen_s(&f, glt::str::to_utf8(tf).c_str(), "a") == 0) {
+                            std::fputs(s.c_str(), f);
+                            std::fclose(f);
+                        }
+                    }
+                };
+
+                glt::ui::App app;
+                app.startup();
+
+                int exit_code = 0;
+                if (cmd == L"help") {
+                    tee("GameLoop Tuner CLI (v1.2.0.beta)\nUsage:\n");
+                    tee("  --help                              show this help\n");
+                    tee("  --version                           print version\n");
+                    tee("  --list-backups                      list existing backups\n");
+                    tee("  --create-bundle <path> [--title <t>]  capture all settings to .gltbak\n");
+                    tee("  --open-bundle <path>                load and preview a .gltbak\n");
+                    tee("  --apply-bundle <path> [--dry-run]\n");
+                    tee("      [--no-configs] [--no-smk] [--no-registry]\n");
+                } else if (cmd == L"version") {
+                    tee("1.2.0.beta\n");
+                } else if (cmd == L"list-backups") {
+                    tee(app.list_backups_sync());
+                } else if (cmd == L"create-bundle") {
+                    if (bundle_path.empty()) {
+                        werr("FAILED: --create-bundle requires a path\n");
+                        exit_code = 1;
+                    } else {
+                        tee(app.create_bundle_sync(bundle_path, title) + "\n");
+                    }
+                } else if (cmd == L"open-bundle") {
+                    if (bundle_path.empty()) {
+                        werr("FAILED: --open-bundle requires a path\n");
+                        exit_code = 1;
+                    } else if (!app.open_bundle(bundle_path)) {
+                        werr("FAILED: could not open bundle\n");
+                        exit_code = 1;
+                    } else {
+                        const auto& b = *app.current_bundle();
+                        const auto& diffs = app.bundle_diffs();
+                        std::size_t changed = 0, matches = 0, missing = 0;
+                        for (const auto& d : diffs) {
+                            if (d.matches) ++matches;
+                            else if (d.live_value == "<missing on this system>" ||
+                                     d.live_value == "<not found>" ||
+                                     d.live_value == "<unreadable>")
+                                ++missing;
+                            else
+                                ++changed;
+                        }
+                        std::ostringstream out;
+                        out << "OK: bundle opened\n"
+                            << "  title: " << b.title << "\n"
+                            << "  created: " << b.created << "\n"
+                            << "  source: " << b.source_system.hostname
+                            << " / GameLoop " << b.source_system.gameloop_version
+                            << " / CODM " << b.source_system.codm_version << "\n"
+                            << "  sections: configs_db=" << b.configs_db.size()
+                            << ", smk_conf=" << (b.smk_conf.empty() ? 0 : 1)
+                            << ", registry=" << b.registry.size() << "\n"
+                            << "  diff: " << diffs.size() << " fields ("
+                            << matches << " match, " << changed
+                            << " will change, " << missing << " missing)\n";
+                        tee(out.str());
+                    }
+                } else if (cmd == L"apply-bundle") {
+                    if (bundle_path.empty()) {
+                        werr("FAILED: --apply-bundle requires a path\n");
+                        exit_code = 1;
+                    } else if (!app.open_bundle(bundle_path)) {
+                        werr("FAILED: could not open bundle\n");
+                        exit_code = 1;
+                    } else {
+                        app.set_apply_configs_db(apply_configs);
+                        app.set_apply_smk_conf(apply_smk);
+                        app.set_apply_registry(apply_registry);
+                        tee(app.apply_bundle_sync(dry_run) + "\n");
+                    }
+                }
+                app.shutdown();
+                ::FreeConsole();
+                return exit_code;
+            }
+        }
     }
 
     // A portable self-replace parks the previous binary as <exe>.old; this is

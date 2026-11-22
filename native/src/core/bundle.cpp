@@ -491,17 +491,28 @@ Bundle capture_bundle(std::string_view title) {
     b.source_system = capture_source_system();
 
     // Summary for the preview UI.
-    b.summary["keymap_mode"] = b.configs_db.value("keymap_mode.unlogin." + std::string(paths::kPkg) + ".145",
-                                                   json::object()).value("lastSolutionId", std::string{"unknown"});
-    b.summary["lastmodeid"] = b.configs_db.value("lastmodeid.unlogin." + std::string(paths::kPkg),
-                                                 std::string{"unknown"});
-    if (b.configs_db.contains("androws." + std::string(paths::kPkg) + ".local_user_config"))
-        b.summary["clarity"] = b.configs_db["androws." + std::string(paths::kPkg) + ".local_user_config"]
-                                   .value("clarity", json());
-    if (b.configs_db.contains("androws." + std::string(paths::kPkg) + ".local_user_config"))
-        b.summary["low_latency_mode"] =
-            b.configs_db["androws." + std::string(paths::kPkg) + ".local_user_config"]
-                .value("low_latency_mode", json());
+    {
+        auto km_key = "keymap_mode.unlogin." + std::string(paths::kPkg) + ".145";
+        auto km = b.configs_db.value(km_key, json::object());
+        b.summary["keymap_mode"] = km.is_object()
+            ? km.value("lastSolutionId", std::string{"unknown"})
+            : std::string{"unknown"};
+    }
+    b.summary["lastmodeid"] = b.configs_db.contains("lastmodeid.unlogin." + std::string(paths::kPkg))
+        ? b.configs_db["lastmodeid.unlogin." + std::string(paths::kPkg)].is_string()
+            ? b.configs_db["lastmodeid.unlogin." + std::string(paths::kPkg)].get<std::string>()
+            : std::string{"unknown"}
+        : std::string{"unknown"};
+    auto luc_key = "androws." + std::string(paths::kPkg) + ".local_user_config";
+    if (b.configs_db.contains(luc_key)) {
+        auto luc = b.configs_db[luc_key];
+        b.summary["clarity"] = luc.is_object()
+            ? luc.value("clarity", json())
+            : json();
+        b.summary["low_latency_mode"] = luc.is_object()
+            ? luc.value("low_latency_mode", json())
+            : json();
+    }
     b.summary["smk_readonly"] = str::is_readonly(smk);
 
     return b;
@@ -625,8 +636,13 @@ std::vector<std::string> apply_bundle(const Bundle& bundle, ApplyOptions options
         notes.push_back("DRYRUN: bundle would be applied to this system");
         auto diffs = diff_bundle(bundle);
         std::size_t changes = 0;
-        for (const auto& d : diffs)
-            if (!d.matches) ++changes;
+        for (const auto& d : diffs) {
+            if (d.matches) continue;
+            if (d.section == "configs_db" && !options.configs_db) continue;
+            if (d.section == "smk_conf" && !options.smk_conf) continue;
+            if (d.section == "registry" && !options.registry) continue;
+            ++changes;
+        }
         notes.push_back(std::to_string(diffs.size()) + " fields compared, " +
                         std::to_string(changes) + " would change");
         return notes;

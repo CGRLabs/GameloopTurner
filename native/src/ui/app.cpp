@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
+#include <sstream>
 #include <windows.h>
 #include <shellapi.h>
 #include <shobjidl.h>
@@ -628,6 +629,64 @@ void App::clear_bundle() {
     bundle_.reset();
     bundle_diffs_.clear();
     bundle_path_.clear();
+}
+
+// ── CLI (headless) support ─────────────────────────────────────────────
+
+std::string App::create_bundle_sync(std::wstring save_path, std::string title) {
+    std::ostringstream out;
+    try {
+        auto b = bundle::capture_bundle(title);
+        if (!bundle::write_bundle(save_path, b)) {
+            out << "FAILED: could not write bundle to " << str::to_utf8(save_path);
+            return out.str();
+        }
+        out << "OK: bundle created at " << str::to_utf8(save_path)
+            << " | sections: configs_db=" << b.configs_db.size()
+            << ", smk_conf=" << (b.smk_conf.empty() ? 0 : 1)
+            << ", registry=" << b.registry.size()
+            << ", source: " << b.source_system.hostname << "/" << b.source_system.gameloop_version;
+        return out.str();
+    } catch (const std::exception& e) {
+        out << "FAILED: " << e.what();
+        return out.str();
+    }
+}
+
+std::string App::apply_bundle_sync(bool dry_run) {
+    std::ostringstream out;
+    if (!bundle_) {
+        out << "FAILED: no bundle loaded";
+        return out.str();
+    }
+    try {
+        auto notes = bundle::apply_bundle(*bundle_, bundle_options_, dry_run);
+        for (const auto& n : notes) out << n << "\n";
+        out << (dry_run ? "DRYRUN complete" : "APPLY complete");
+        return out.str();
+    } catch (const std::exception& e) {
+        out << "FAILED: " << e.what();
+        return out.str();
+    }
+}
+
+std::string App::list_backups_sync() {
+    std::ostringstream out;
+    auto dbp = paths::appdata_db();
+    if (dbp.empty()) {
+        out << "FAILED: Configs.db not found - GameLoop not installed?";
+        return out.str();
+    }
+    auto list = backups::list_backups(dbp);
+    if (list.empty()) {
+        out << "No backups found.";
+        return out.str();
+    }
+    for (const auto& e : list) {
+        out << str::to_utf8(e.filename) << " | " << e.kind << " | " << e.bytes
+            << " bytes | " << str::to_utf8(e.path) << "\n";
+    }
+    return out.str();
 }
 
 // ── Self-update ────────────────────────────────────────────────────────────

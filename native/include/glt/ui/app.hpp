@@ -283,7 +283,22 @@ public:
     // Clears the in-memory bundle and its diffs.
     void clear_bundle();
 
-    // ── Per-section apply toggles ────────────────────────────────────────────
+    // ── CLI (headless) support ─────────────────────────────────────────────
+    // Synchronous bundle operations for agent/script use. Each returns a
+    // human-readable result string suitable for stdout or JSON logging.
+    //
+    // create_bundle_sync() captures all settings and writes a .gltbak file.
+    [[nodiscard]] std::string create_bundle_sync(std::wstring save_path,
+                                                  std::string title);
+
+    // apply_bundle_sync() applies the currently loaded bundle (or dry-run).
+    // Returns per-section notes including version mismatches and auto-backup path.
+    [[nodiscard]] std::string apply_bundle_sync(bool dry_run = false);
+
+    // list_backups_sync() returns a newline-separated list of existing backups.
+    [[nodiscard]] std::string list_backups_sync();
+
+    // Per-section apply toggles (mirrors the UI checkboxes).
     [[nodiscard]] const bundle::ApplyOptions& bundle_options() const { return bundle_options_; }
     void set_apply_configs_db(bool v) { bundle_options_.configs_db = v; }
     void set_apply_smk_conf(bool v) { bundle_options_.smk_conf = v; }
